@@ -1,0 +1,29 @@
+# src/ship_broker/config.py
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "Ship Broker"
+    VERSION: str = "0.1.0"
+    API_V1_STR: str = "/api/v1"
+    
+    # Database
+    SQLALCHEMY_DATABASE_URL: str = "sqlite:///./ship_broker.db"
+    
+    # Email settings
+    EMAIL_ADDRESS: str = ""
+    EMAIL_PASSWORD: str = ""
+    IMAP_SERVER: str = "imap.gmail.com"
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore"  # This will ignore extra environment variables
+    )
+
+@lru_cache()
+def get_settings():
+    return Settings()
+
+# Export settings instance for convenience
+settings = get_settings()

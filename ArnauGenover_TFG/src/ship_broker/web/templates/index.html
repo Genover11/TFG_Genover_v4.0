@@ -1,0 +1,24 @@
+<!-- web/templates/index.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <h1 class="text-3xl font-bold mb-8">Dashboard</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Recent Vessels</h2>
+            <div id="recent-vessels" class="space-y-4">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+        
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Recent Cargoes</h2>
+            <div id="recent-cargoes" class="space-y-4">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+<!-- web/templates/base.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Ship Broker{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', path='/css/style.css') }}" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-6xl mx-auto px-4">
+            <div class="flex justify-between">
+                <div class="flex space-x-7">
+                    <div>
+                        <a href="/" class="flex items-center py-4 px-2">
+                            <span class="font-semibold text-gray-500 text-lg">Ship Broker</span>
+                        </a>
+                    </div>
+                    <div class="hidden md:flex items-center space-x-1">
+                        <a href="/vessels" class="py-4 px-2 text-gray-500 hover:text-green-500">Vessels</a>
+                        <a href="/cargoes" class="py-4 px-2 text-gray-500 hover:text-green-500">Cargoes</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+</body>
+</html>
