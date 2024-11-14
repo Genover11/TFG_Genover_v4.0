@@ -1,64 +1,55 @@
+# src/ship_broker/core/email_parser.py
 import email
 import imaplib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-import pandas as pd
-from email.header import decode_header
-import os
 from dataclasses import dataclass
-import spacy
-import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
-class Vessel:
+class VesselData:
     name: str
-    dwt: Optional[float]
-    position: Optional[str]
-    eta: Optional[datetime]
-    open_date: Optional[datetime]
-    vessel_type: Optional[str]
-    description: str
+    dwt: Optional[float] = None
+    position: Optional[str] = None
+    eta: Optional[datetime] = None
+    open_date: Optional[datetime] = None
+    vessel_type: Optional[str] = None
+    description: str = ""
 
 @dataclass
-class Cargo:
+class CargoData:
     cargo_type: str
-    quantity: Optional[float]
-    load_port: Optional[str]
-    discharge_port: Optional[str]
-    laycan: Optional[tuple]
-    rate: Optional[str]
-    description: str
+    quantity: Optional[float] = None
+    load_port: Optional[str] = None
+    discharge_port: Optional[str] = None
+    laycan_start: Optional[datetime] = None
+    laycan_end: Optional[datetime] = None
+    rate: Optional[str] = None
+    description: str = ""
 
 class EmailParser:
     def __init__(self, email_address: str, password: str, imap_server: str = "imap.gmail.com"):
-        """Initialize the email parser with credentials."""
         self.email_address = email_address
         self.password = password
         self.imap_server = imap_server
-        # Load spaCy model for NER
-        self.nlp = spacy.load("en_core_web_sm")
-        
-        # Common vessel type patterns
-        self.vessel_types = [
-            "bulk carrier", "bulker", "tanker", "container ship", "cargo vessel",
-            "lng", "lpg", "roro", "panamax", "supramax", "handysize"
-        ]
-        
+
     def connect(self) -> imaplib.IMAP4_SSL:
-        """Establish connection to email server."""
+        logger.info(f"Connecting to {self.imap_server}")
         mail = imaplib.IMAP4_SSL(self.imap_server)
         mail.login(self.email_address, self.password)
         return mail
 
-    def get_emails(self, folder: str = "INBOX", days: int = 7) -> List[Dict]:
-        """Retrieve emails from specified folder within last n days."""
+    def get_emails(self, days: int = 1) -> List[Dict]:
+        logger.info(f"Fetching emails from last {days} days")
         mail = self.connect()
-        mail.select(folder)
+        mail.select('INBOX')
         
-        # Search for recent emails
-        date_criterion = f'(SINCE "{(datetime.now() - pd.Timedelta(days=days)).strftime("%d-%b-%Y")}")'
-        _, messages = mail.search(None, date_criterion)
+        # Calculate date for search
+        date = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
+        _, messages = mail.search(None, f'(SINCE "{date}")')
         
         emails_data = []
         for num in messages[0].split():
@@ -66,35 +57,20 @@ class EmailParser:
             email_body = msg_data[0][1]
             email_message = email.message_from_bytes(email_body)
             
-            subject = self._decode_email_header(email_message["subject"])
-            sender = self._decode_email_header(email_message["from"])
-            date = email_message["date"]
-            
             content = self._get_email_content(email_message)
+            subject = email_message["subject"] or ""
             
+            logger.info(f"Found email with subject: {subject}")
             emails_data.append({
-                "subject": subject,
-                "sender": sender,
-                "date": date,
-                "content": content
+                'subject': subject,
+                'content': content
             })
             
         mail.close()
         mail.logout()
         return emails_data
 
-    def _decode_email_header(self, header: str) -> str:
-        """Decode email header to readable format."""
-        if header is None:
-            return ""
-        decoded_parts = decode_header(header)
-        return " ".join(
-            part.decode(encoding) if isinstance(part, bytes) else part
-            for part, encoding in decoded_parts
-        )
-
     def _get_email_content(self, email_message) -> str:
-        """Extract email content, handling multiple parts and encodings."""
         content = ""
         if email_message.is_multipart():
             for part in email_message.walk():
@@ -102,213 +78,76 @@ class EmailParser:
                     try:
                         content += part.get_payload(decode=True).decode()
                     except:
+                        logger.error("Failed to decode email part")
                         continue
         else:
             try:
                 content = email_message.get_payload(decode=True).decode()
             except:
+                logger.error("Failed to decode email")
                 content = email_message.get_payload()
         return content
 
-    def extract_vessels(self, text: str) -> List[Vessel]:
-        """Extract vessel information from text."""
+    def extract_vessels(self, text: str) -> List[VesselData]:
+        logger.info("Extracting vessel information from email")
         vessels = []
-        # Split text into paragraphs
-        paragraphs = text.split('\n\n')
         
-        for paragraph in paragraphs:
-            # Skip if paragraph is too short
-            if len(paragraph) < 10:
-                continue
+        # Look for vessel sections
+        vessel_sections = re.split(r'\n\s*\n', text)
+        
+        for section in vessel_sections:
+            # Look for vessel name patterns
+            name_match = re.search(r'(?:VESSEL|NAME|M/?V)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
+            if name_match:
+                name = name_match.group(1).strip()
+                logger.info(f"Found vessel: {name}")
                 
-            # Use spaCy for named entity recognition
-            doc = self.nlp(paragraph)
-            
-            # Look for vessel type mentions
-            vessel_type = None
-            for v_type in self.vessel_types:
-                if v_type in paragraph.lower():
-                    vessel_type = v_type
-                    break
-            
-            # Extract potential vessel names (usually in caps)
-            vessel_names = re.findall(r'[A-Z]{2,}(?:\s+[A-Z]+)*', paragraph)
-            
-            # Extract DWT (Dead Weight Tonnage)
-            dwt_match = re.search(r'(\d{2,3}(?:,\d{3})*(?:\.\d+)?)\s*(?:DWT|dwt)', paragraph)
-            dwt = float(dwt_match.group(1).replace(',', '')) if dwt_match else None
-            
-            # Extract dates
-            dates = self._extract_dates(paragraph)
-            
-            # Extract position
-            position = None
-            for ent in doc.ents:
-                if ent.label_ in ["GPE", "LOC"]:
-                    position = ent.text
-                    break
-            
-            if vessel_names:
-                vessels.append(Vessel(
-                    name=vessel_names[0],
-                    dwt=dwt,
-                    position=position,
-                    eta=dates.get('eta'),
-                    open_date=dates.get('open_date'),
-                    vessel_type=vessel_type,
-                    description=paragraph
-                ))
+                # Extract other details
+                dwt_match = re.search(r'(?:DWT|DEADWEIGHT)\s*:?\s*([\d,\.]+)', section, re.IGNORECASE)
+                position_match = re.search(r'(?:POSITION|PORT|LOC)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
+                type_match = re.search(r'(?:TYPE|VESSEL TYPE)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
                 
+                vessel = VesselData(
+                    name=name,
+                    dwt=float(dwt_match.group(1).replace(',', '')) if dwt_match else None,
+                    position=position_match.group(1).strip() if position_match else None,
+                    vessel_type=type_match.group(1).strip() if type_match else None,
+                    description=section.strip()
+                )
+                vessels.append(vessel)
+        
+        logger.info(f"Found {len(vessels)} vessels")
         return vessels
 
-    def extract_cargoes(self, text: str) -> List[Cargo]:
-        """Extract cargo information from text."""
+    def extract_cargoes(self, text: str) -> List[CargoData]:
+        logger.info("Extracting cargo information from email")
         cargoes = []
-        paragraphs = text.split('\n\n')
         
-        for paragraph in paragraphs:
-            if len(paragraph) < 10:
-                continue
+        # Look for cargo sections
+        cargo_sections = re.split(r'\n\s*\n', text)
+        
+        for section in cargo_sections:
+            # Look for cargo type patterns
+            type_match = re.search(r'(?:CARGO|TYPE)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
+            if type_match:
+                cargo_type = type_match.group(1).strip()
+                logger.info(f"Found cargo: {cargo_type}")
                 
-            doc = self.nlp(paragraph)
-            
-            # Extract cargo type and quantity
-            quantity_match = re.search(r'(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s*(MT|KT|tons?|tonnes?)', 
-                                    paragraph, re.IGNORECASE)
-            quantity = float(quantity_match.group(1).replace(',', '')) if quantity_match else None
-            
-            # Extract ports
-            ports = []
-            for ent in doc.ents:
-                if ent.label_ in ["GPE", "LOC"]:
-                    ports.append(ent.text)
-            
-            # Extract laycan (laydays cancelling) dates
-            dates = self._extract_dates(paragraph)
-            laycan = (dates.get('start_date'), dates.get('end_date')) if dates else None
-            
-            # Extract rate information
-            rate_match = re.search(r'\$\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*USD', paragraph)
-            rate = rate_match.group(1) if rate_match else None
-            
-            if quantity or (len(ports) >= 2):
-                cargoes.append(Cargo(
-                    cargo_type=self._identify_cargo_type(paragraph),
-                    quantity=quantity,
-                    load_port=ports[0] if ports else None,
-                    discharge_port=ports[1] if len(ports) > 1 else None,
-                    laycan=laycan,
-                    rate=rate,
-                    description=paragraph
-                ))
+                # Extract other details
+                quantity_match = re.search(r'(?:QTY|QUANTITY)\s*:?\s*([\d,\.]+)', section, re.IGNORECASE)
+                load_match = re.search(r'(?:LOAD|LOADING)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
+                discharge_match = re.search(r'(?:DISCH|DISCHARGE)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
+                rate_match = re.search(r'(?:RATE|FREIGHT)\s*:?\s*([\d\.,]+\s*(?:USD|PMT|USD/MT))', section, re.IGNORECASE)
                 
+                cargo = CargoData(
+                    cargo_type=cargo_type,
+                    quantity=float(quantity_match.group(1).replace(',', '')) if quantity_match else None,
+                    load_port=load_match.group(1).strip() if load_match else None,
+                    discharge_port=discharge_match.group(1).strip() if discharge_match else None,
+                    rate=rate_match.group(1).strip() if rate_match else None,
+                    description=section.strip()
+                )
+                cargoes.append(cargo)
+        
+        logger.info(f"Found {len(cargoes)} cargoes")
         return cargoes
-
-    def _extract_dates(self, text: str) -> Dict:
-        """Extract various types of dates from text."""
-        # Common date patterns in broker emails
-        date_patterns = [
-            r'(\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4})',
-            r'(\d{1,2}/\d{1,2}/\d{4})',
-            r'(\d{4}-\d{2}-\d{2})'
-        ]
-        
-        dates = {}
-        for pattern in date_patterns:
-            matches = re.finditer(pattern, text, re.IGNORECASE)
-            for match in matches:
-                date_str = match.group(1)
-                try:
-                    date = pd.to_datetime(date_str)
-                    # Classify date based on context
-                    context = text[max(0, match.start() - 20):min(len(text), match.end() + 20)]
-                    if any(word in context.lower() for word in ['eta', 'arrival', 'arriving']):
-                        dates['eta'] = date
-                    elif any(word in context.lower() for word in ['open', 'available']):
-                        dates['open_date'] = date
-                    elif any(word in context.lower() for word in ['laycan', 'start']):
-                        dates['start_date'] = date
-                    elif any(word in context.lower() for word in ['cancel', 'end']):
-                        dates['end_date'] = date
-                except:
-                    continue
-                    
-        return dates
-
-    def _identify_cargo_type(self, text: str) -> str:
-        """Identify type of cargo from text description."""
-        common_cargos = {
-            'grain': ['wheat', 'corn', 'soybean', 'grain', 'barley'],
-            'coal': ['coal', 'petcoke'],
-            'ore': ['iron ore', 'bauxite', 'manganese'],
-            'steel': ['steel', 'plates', 'coils'],
-            'fertilizer': ['fertilizer', 'urea', 'phosphate'],
-            'oil': ['crude', 'petroleum', 'diesel', 'gasoline'],
-        }
-        
-        text_lower = text.lower()
-        for cargo_type, keywords in common_cargos.items():
-            if any(keyword in text_lower for keyword in keywords):
-                return cargo_type
-        return 'general cargo'
-
-    def save_to_database(self, vessels: List[Vessel], cargoes: List[Cargo], 
-                        filename: str = 'shipping_data.json'):
-        """Save extracted data to a JSON database."""
-        data = {
-            'vessels': [vars(v) for v in vessels],
-            'cargoes': [vars(c) for c in cargoes],
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # Convert datetime objects to strings
-        for vessel in data['vessels']:
-            for key, value in vessel.items():
-                if isinstance(value, datetime):
-                    vessel[key] = value.isoformat()
-                    
-        for cargo in data['cargoes']:
-            if cargo['laycan']:
-                cargo['laycan'] = tuple(d.isoformat() if d else None for d in cargo['laycan'])
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-def main():
-    # Configuration
-    EMAIL_ADDRESS = "your_email@example.com"
-    EMAIL_PASSWORD = "your_password"
-    IMAP_SERVER = "imap.gmail.com"
-    
-    # Initialize parser
-    parser = EmailParser(EMAIL_ADDRESS, EMAIL_PASSWORD, IMAP_SERVER)
-    
-    try:
-        # Get recent emails
-        emails = parser.get_emails(days=7)
-        
-        all_vessels = []
-        all_cargoes = []
-        
-        # Process each email
-        for email_data in emails:
-            content = email_data['content']
-            
-            # Extract vessels and cargoes
-            vessels = parser.extract_vessels(content)
-            cargoes = parser.extract_cargoes(content)
-            
-            all_vessels.extend(vessels)
-            all_cargoes.extend(cargoes)
-            
-        # Save results
-        parser.save_to_database(all_vessels, all_cargoes)
-        
-        print(f"Successfully processed {len(emails)} emails")
-        print(f"Found {len(all_vessels)} vessels and {len(all_cargoes)} cargoes")
-        
-    except Exception as e:
-        print(f"Error occurred: {str(e)}")
-
-if __name__ == "__main__":
-    main()

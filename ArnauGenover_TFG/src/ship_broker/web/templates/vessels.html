@@ -1,23 +1,84 @@
-<!-- web/templates/vessels.html -->
+<!-- src/ship_broker/web/templates/vessels.html -->
 {% extends "base.html" %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
-    <h1 class="text-3xl font-bold mb-8">Vessels</h1>
-    <div class="bg-white rounded-lg shadow">
-        <table class="min-w-full">
-            <thead>
-                <tr class="bg-gray-50">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Vessels</h1>
+        <div class="space-x-4">
+            <span id="last-update" class="text-gray-500"></span>
+            <button onclick="refreshData()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                Refresh Data
+            </button>
+            <button onclick="processEmails()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+                Process Emails Now
+            </button>
+        </div>
+    </div>
+    
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ETA</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">DWT</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200" id="vessels-table">
-                <!-- Populated by JavaScript -->
+            <tbody id="vessels-table" class="bg-white divide-y divide-gray-200">
+                <!-- Data will be inserted here by JavaScript -->
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+function refreshData() {
+    const vesselsTable = document.getElementById('vessels-table');
+    const lastUpdate = document.getElementById('last-update');
+    
+    vesselsTable.innerHTML = '<tr><td colspan="4" class="px-6 py-4 text-center">Loading...</td></tr>';
+    
+    fetch('/api/v1/vessels/')
+        .then(response => response.json())
+        .then(data => {
+            vesselsTable.innerHTML = '';
+            data.forEach(vessel => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4">${vessel.name}</td>
+                    <td class="px-6 py-4">${vessel.vessel_type || '-'}</td>
+                    <td class="px-6 py-4">${vessel.position || '-'}</td>
+                    <td class="px-6 py-4">${vessel.dwt || '-'}</td>
+                `;
+                vesselsTable.appendChild(row);
+            });
+            lastUpdate.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            vesselsTable.innerHTML = '<tr><td colspan="4" class="px-6 py-4 text-center text-red-500">Error loading data</td></tr>';
+        });
+}
+
+function processEmails() {
+    fetch('/api/v1/process-emails/', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            alert('Emails processed successfully');
+            refreshData();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error processing emails');
+        });
+}
+
+// Load initial data
+refreshData();
+
+// Refresh data every 60 seconds
+setInterval(refreshData, 60000);
+</script>
 {% endblock %}

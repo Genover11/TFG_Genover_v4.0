@@ -5,20 +5,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Ship Broker{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link href="{{ url_for('static', path='/css/style.css') }}" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
-    <nav class="bg-white shadow-lg">
+    <nav class="bg-white shadow-lg mb-8">
         <div class="max-w-6xl mx-auto px-4">
             <div class="flex justify-between">
                 <div class="flex space-x-7">
-                    <div>
-                        <a href="/" class="flex items-center py-4 px-2">
-                            <span class="font-semibold text-gray-500 text-lg">Ship Broker</span>
-                        </a>
-                    </div>
-                    <div class="hidden md:flex items-center space-x-1">
+                    <a href="/" class="flex items-center py-4 px-2">
+                        <span class="font-semibold text-gray-500 text-lg">Ship Broker</span>
+                    </a>
+                    <div class="flex items-center space-x-1">
                         <a href="/vessels" class="py-4 px-2 text-gray-500 hover:text-green-500">Vessels</a>
                         <a href="/cargoes" class="py-4 px-2 text-gray-500 hover:text-green-500">Cargoes</a>
                     </div>
@@ -27,10 +24,56 @@
         </div>
     </nav>
 
-    <main class="container mx-auto px-4 py-8">
+    <main class="container mx-auto px-4">
         {% block content %}{% endblock %}
     </main>
 
-    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Load vessels data
+        const vesselsTable = document.getElementById('vessels-table');
+        if (vesselsTable) {
+            console.log('Loading vessels data...');
+            fetch('/api/v1/vessels/')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Vessels data:', data);
+                    data.forEach(vessel => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td class="px-6 py-4">${vessel.name}</td>
+                            <td class="px-6 py-4">${vessel.vessel_type || '-'}</td>
+                            <td class="px-6 py-4">${vessel.position || '-'}</td>
+                            <td class="px-6 py-4">${vessel.dwt || '-'}</td>
+                        `;
+                        vesselsTable.appendChild(row);
+                    });
+                })
+                .catch(error => console.error('Error loading vessels:', error));
+        }
+
+        // Load cargoes data
+        const cargoesTable = document.getElementById('cargoes-table');
+        if (cargoesTable) {
+            console.log('Loading cargoes data...');
+            fetch('/api/v1/cargoes/')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Cargoes data:', data);
+                    data.forEach(cargo => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td class="px-6 py-4">${cargo.cargo_type}</td>
+                            <td class="px-6 py-4">${cargo.quantity || '-'}</td>
+                            <td class="px-6 py-4">${cargo.load_port || '-'} to ${cargo.discharge_port || '-'}</td>
+                            <td class="px-6 py-4">${cargo.rate || '-'}</td>
+                        `;
+                        cargoesTable.appendChild(row);
+                    });
+                })
+                .catch(error => console.error('Error loading cargoes:', error));
+        }
+    });
+    </script>
 </body>
 </html>

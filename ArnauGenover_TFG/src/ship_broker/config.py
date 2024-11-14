@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,
-        extra="ignore"  # This will ignore extra environment variables
+        extra="ignore"
     )
 
 @lru_cache()
 def get_settings():
     return Settings()
 
-# Export settings instance for convenience
+# Export settings instance
 settings = get_settings()

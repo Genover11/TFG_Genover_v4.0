@@ -1,0 +1,92 @@
+<!-- src/ship_broker/web/templates/status.html -->
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-8">System Status</h1>
+    
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Email Connection Status -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Email Connection</h2>
+            <div id="email-status" class="space-y-2">
+                <div class="flex justify-between">
+                    <span>Status:</span>
+                    <span id="connection-status" class="font-medium">Checking...</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Last Check:</span>
+                    <span id="last-check" class="font-medium">-</span>
+                </div>
+            </div>
+            <button onclick="testConnection()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                Test Connection
+            </button>
+        </div>
+
+        <!-- Database Stats -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Database Status</h2>
+            <div class="space-y-2">
+                <div class="flex justify-between">
+                    <span>Total Vessels:</span>
+                    <span id="vessel-count" class="font-medium">0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Total Cargoes:</span>
+                    <span id="cargo-count" class="font-medium">0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Last Update:</span>
+                    <span id="last-update" class="font-medium">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="mt-8 bg-white rounded-lg shadow p-6">
+        <h2 class="text-xl font-semibold mb-4">Recent Activity</h2>
+        <div id="activity-log" class="space-y-2">
+            <!-- Populated by JavaScript -->
+        </div>
+    </div>
+</div>
+
+<script>
+function testConnection() {
+    fetch('/api/v1/test/email-connection/')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('connection-status').textContent = data.status;
+            document.getElementById('last-check').textContent = new Date().toLocaleString();
+        })
+        .catch(error => {
+            document.getElementById('connection-status').textContent = 'Error';
+            console.error('Error:', error);
+        });
+}
+
+function updateStats() {
+    // Update vessel count
+    fetch('/api/v1/vessels/')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('vessel-count').textContent = data.length;
+        });
+
+    // Update cargo count
+    fetch('/api/v1/cargoes/')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('cargo-count').textContent = data.length;
+        });
+
+    document.getElementById('last-update').textContent = new Date().toLocaleString();
+}
+
+// Update stats every minute
+setInterval(updateStats, 60000);
+updateStats();
+</script>
+{% endblock %}

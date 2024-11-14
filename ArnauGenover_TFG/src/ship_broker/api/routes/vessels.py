@@ -11,12 +11,20 @@ router = APIRouter()
 
 @router.get("/vessels/", response_model=List[VesselSchema])
 def read_vessels(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """
+    Read a list of vessels from the database with optional skip and limit for pagination.
+    """
     vessels = db.query(Vessel).offset(skip).limit(limit).all()
     return vessels
 
 @router.get("/vessels/{vessel_id}", response_model=VesselSchema)
 def read_vessel(vessel_id: int, db: Session = Depends(get_db)):
+    """
+    Read a specific vessel by its ID from the database.
+    """
     vessel = db.query(Vessel).filter(Vessel.id == vessel_id).first()
+    
     if vessel is None:
         raise HTTPException(status_code=404, detail="Vessel not found")
+    
     return vessel

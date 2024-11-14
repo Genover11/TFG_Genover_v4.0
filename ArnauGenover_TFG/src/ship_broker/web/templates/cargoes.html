@@ -1,21 +1,21 @@
-<!-- web/templates/cargoes.html -->
+<!-- src/ship_broker/web/templates/cargoes.html -->
 {% extends "base.html" %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
     <h1 class="text-3xl font-bold mb-8">Cargoes</h1>
-    <div class="bg-white rounded-lg shadow">
-        <table class="min-w-full">
-            <thead>
-                <tr class="bg-gray-50">
+    <div class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ports</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Laycan</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
                 </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200" id="cargoes-table">
-                <!-- Populated by JavaScript -->
+            <tbody id="cargoes-table" class="bg-white divide-y divide-gray-200">
+                <!-- Data will be inserted here by JavaScript -->
             </tbody>
         </table>
     </div>

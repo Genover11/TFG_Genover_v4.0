@@ -1,10 +1,16 @@
-# core/database.py
+# src/ship_broker/core/database.py
+import os
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+from ..config import settings
 
-engine = create_engine("sqlite:///./ship_broker.db", connect_args={"check_same_thread": False})
+# Get the current directory
+current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+database_url = f"sqlite:///{os.path.join(current_dir, 'ship_broker.db')}"
+
+engine = create_engine(database_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

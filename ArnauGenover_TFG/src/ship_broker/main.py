@@ -3,11 +3,13 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+import asyncio
 import os
 
 from .config import Settings, get_settings
-from .api.routes import vessels, cargoes, email_processing
+from .api.routes import vessels, cargoes, email_processing, test
 from .core.database import Base, engine
+from .core.scheduler import start_scheduler
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -42,6 +44,12 @@ templates = Jinja2Templates(directory=os.path.join(current_dir, "web/templates")
 app.include_router(vessels, prefix="/api/v1", tags=["vessels"])
 app.include_router(cargoes, prefix="/api/v1", tags=["cargoes"])
 app.include_router(email_processing, prefix="/api/v1", tags=["email"])
+app.include_router(test.router, prefix="/api/v1", tags=["test"])
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks when the application starts"""
+    asyncio.create_task(start_scheduler())
 
 @app.get("/")
 async def home(request: Request):
