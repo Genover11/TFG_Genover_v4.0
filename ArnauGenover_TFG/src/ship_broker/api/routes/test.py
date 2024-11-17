@@ -82,3 +82,39 @@ async def debug_last_email(
             status_code=500,
             detail=f"Debug error: {str(e)}"
         )
+
+
+@router.get("/test/db-contents/")
+async def view_db_contents(db: Session = Depends(get_db)):
+    """View all database contents"""
+    vessels = db.query(Vessel).all()
+    cargoes = db.query(Cargo).all()
+    
+    return {
+        "vessels": [
+            {
+                "name": v.name,
+                "type": v.vessel_type,
+                "position": v.position,
+                "dwt": v.dwt,
+                "created_at": v.created_at
+            } for v in vessels
+        ],
+        "cargoes": [
+            {
+                "type": c.cargo_type,
+                "quantity": c.quantity,
+                "load_port": c.load_port,
+                "discharge_port": c.discharge_port,
+                "created_at": c.created_at
+            } for c in cargoes
+        ]
+    }
+
+@router.get("/test/clear-database/")
+async def clear_database(db: Session = Depends(get_db)):
+    """Clear all data from database"""
+    db.query(Vessel).delete()
+    db.query(Cargo).delete()
+    db.commit()
+    return {"message": "Database cleared successfully"}

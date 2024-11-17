@@ -1,4 +1,4 @@
-<!-- web/templates/base.html -->
+<!-- src/ship_broker/web/templates/base.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,73 +7,34 @@
     <title>{% block title %}Ship Broker{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100">
-    <nav class="bg-white shadow-lg mb-8">
-        <div class="max-w-6xl mx-auto px-4">
-            <div class="flex justify-between">
-                <div class="flex space-x-7">
-                    <a href="/" class="flex items-center py-4 px-2">
-                        <span class="font-semibold text-gray-500 text-lg">Ship Broker</span>
-                    </a>
-                    <div class="flex items-center space-x-1">
-                        <a href="/vessels" class="py-4 px-2 text-gray-500 hover:text-green-500">Vessels</a>
-                        <a href="/cargoes" class="py-4 px-2 text-gray-500 hover:text-green-500">Cargoes</a>
+<body class="bg-gray-100 min-h-screen">
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <a href="/" class="text-xl font-bold text-gray-800">Ship Broker</a>
+                    </div>
+                    <div class="hidden md:ml-6 md:flex md:space-x-8">
+                        <a href="/" class="inline-flex items-center px-1 pt-1 text-gray-500 hover:text-gray-700">
+                            Dashboard
+                        </a>
+                        <a href="/vessels" class="inline-flex items-center px-1 pt-1 text-gray-500 hover:text-gray-700">
+                            Vessels
+                        </a>
+                        <a href="/cargoes" class="inline-flex items-center px-1 pt-1 text-gray-500 hover:text-gray-700">
+                            Cargoes
+                        </a>
                     </div>
                 </div>
             </div>
         </div>
     </nav>
 
-    <main class="container mx-auto px-4">
-        {% block content %}{% endblock %}
+    <main class="py-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {% block content %}{% endblock %}
+        </div>
     </main>
-
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Load vessels data
-        const vesselsTable = document.getElementById('vessels-table');
-        if (vesselsTable) {
-            console.log('Loading vessels data...');
-            fetch('/api/v1/vessels/')
-                .then(response => response.json())
-                .then(data => {
-                    console.log('Vessels data:', data);
-                    data.forEach(vessel => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td class="px-6 py-4">${vessel.name}</td>
-                            <td class="px-6 py-4">${vessel.vessel_type || '-'}</td>
-                            <td class="px-6 py-4">${vessel.position || '-'}</td>
-                            <td class="px-6 py-4">${vessel.dwt || '-'}</td>
-                        `;
-                        vesselsTable.appendChild(row);
-                    });
-                })
-                .catch(error => console.error('Error loading vessels:', error));
-        }
-
-        // Load cargoes data
-        const cargoesTable = document.getElementById('cargoes-table');
-        if (cargoesTable) {
-            console.log('Loading cargoes data...');
-            fetch('/api/v1/cargoes/')
-                .then(response => response.json())
-                .then(data => {
-                    console.log('Cargoes data:', data);
-                    data.forEach(cargo => {
-                        const row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td class="px-6 py-4">${cargo.cargo_type}</td>
-                            <td class="px-6 py-4">${cargo.quantity || '-'}</td>
-                            <td class="px-6 py-4">${cargo.load_port || '-'} to ${cargo.discharge_port || '-'}</td>
-                            <td class="px-6 py-4">${cargo.rate || '-'}</td>
-                        `;
-                        cargoesTable.appendChild(row);
-                    });
-                })
-                .catch(error => console.error('Error loading cargoes:', error));
-        }
-    });
-    </script>
 </body>
 </html>

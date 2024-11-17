@@ -1,24 +1,153 @@
-<!-- web/templates/index.html -->
+<!-- src/ship_broker/web/templates/index.html -->
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto">
-    <h1 class="text-3xl font-bold mb-8">Dashboard</h1>
-    
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="max-w-7xl mx-auto">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
+        <p class="mt-2 text-gray-600">Ship Broker Email Processing System</p>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-xl font-semibold mb-4">Recent Vessels</h2>
-            <div id="recent-vessels" class="space-y-4">
-                <!-- Populated by JavaScript -->
-            </div>
+            <h3 class="text-lg font-medium text-gray-900">Total Vessels</h3>
+            <p class="text-3xl font-bold text-blue-600" id="vessels-count">0</p>
+            <p class="text-sm text-gray-500 mt-2">Active vessels in database</p>
         </div>
         
         <div class="bg-white rounded-lg shadow p-6">
-            <h2 class="text-xl font-semibold mb-4">Recent Cargoes</h2>
-            <div id="recent-cargoes" class="space-y-4">
-                <!-- Populated by JavaScript -->
+            <h3 class="text-lg font-medium text-gray-900">Total Cargoes</h3>
+            <p class="text-3xl font-bold text-green-600" id="cargoes-count">0</p>
+            <p class="text-sm text-gray-500 mt-2">Available cargoes</p>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-medium text-gray-900">Last Update</h3>
+            <p class="text-lg font-medium text-gray-600" id="last-update">-</p>
+            <button onclick="processEmails()" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                Process Emails Now
+            </button>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Recent Vessels -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-semibold text-gray-900">Recent Vessels</h2>
+                    <a href="/vessels" class="text-blue-600 hover:text-blue-800">View all</a>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="space-y-4" id="recent-vessels">
+                    <div class="animate-pulse">
+                        <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Cargoes -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-semibold text-gray-900">Recent Cargoes</h2>
+                    <a href="/cargoes" class="text-blue-600 hover:text-blue-800">View all</a>
+                </div>
+            </div>
+            <div class="p-6">
+                <div class="space-y-4" id="recent-cargoes">
+                    <div class="animate-pulse">
+                        <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+function updateDashboard() {
+    // Update vessels
+    fetch('/api/v1/vessels/')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('vessels-count').textContent = data.length;
+            
+            const recentVessels = document.getElementById('recent-vessels');
+            recentVessels.innerHTML = '';
+            
+            data.slice(0, 5).forEach(vessel => {
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center p-2 hover:bg-gray-50 rounded';
+                div.innerHTML = `
+                    <div>
+                        <h3 class="font-medium">${vessel.name}</h3>
+                        <p class="text-sm text-gray-500">${vessel.vessel_type || 'N/A'}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium">${vessel.position || 'N/A'}</p>
+                        <p class="text-sm text-gray-500">${vessel.dwt ? vessel.dwt.toLocaleString() + ' DWT' : 'N/A'}</p>
+                    </div>
+                `;
+                recentVessels.appendChild(div);
+            });
+        });
+
+    // Update cargoes
+    fetch('/api/v1/cargoes/')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('cargoes-count').textContent = data.length;
+            
+            const recentCargoes = document.getElementById('recent-cargoes');
+            recentCargoes.innerHTML = '';
+            
+            data.slice(0, 5).forEach(cargo => {
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center p-2 hover:bg-gray-50 rounded';
+                div.innerHTML = `
+                    <div>
+                        <h3 class="font-medium">${cargo.cargo_type}</h3>
+                        <p class="text-sm text-gray-500">${cargo.quantity ? cargo.quantity.toLocaleString() + ' MT' : 'N/A'}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium">${cargo.load_port || 'N/A'} → ${cargo.discharge_port || 'N/A'}</p>
+                        <p class="text-sm text-gray-500">${cargo.rate || 'Rate N/A'}</p>
+                    </div>
+                `;
+                recentCargoes.appendChild(div);
+            });
+        });
+
+    document.getElementById('last-update').textContent = new Date().toLocaleString();
+}
+
+function processEmails() {
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = 'Processing...';
+    
+    fetch('/api/v1/process-emails/', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            updateDashboard();
+            button.textContent = 'Process Emails Now';
+            button.disabled = false;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            button.textContent = 'Error - Try Again';
+            button.disabled = false;
+        });
+}
+
+// Initial load
+updateDashboard();
+
+// Refresh every 60 seconds
+setInterval(updateDashboard, 60000);
+</script>
 {% endblock %}

@@ -43,3 +43,41 @@ class Cargo(Base):
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
+def print_database_contents():
+    """Utility function to print all database contents"""
+    db = SessionLocal()
+    try:
+        print("\n=== VESSELS ===")
+        vessels = db.query(Vessel).all()
+        for vessel in vessels:
+            print(f"Name: {vessel.name}")
+            print(f"Type: {vessel.vessel_type}")
+            print(f"Position: {vessel.position}")
+            print(f"DWT: {vessel.dwt}")
+            print("-" * 20)
+
+        print("\n=== CARGOES ===")
+        cargoes = db.query(Cargo).all()
+        for cargo in cargoes:
+            print(f"Type: {cargo.cargo_type}")
+            print(f"Quantity: {cargo.quantity}")
+            print(f"Route: {cargo.load_port} -> {cargo.discharge_port}")
+            print("-" * 20)
+    finally:
+        db.close()
+
+# Add a new route to view database contents
+def get_db_stats():
+    """Get database statistics"""
+    db = SessionLocal()
+    try:
+        vessel_count = db.query(Vessel).count()
+        cargo_count = db.query(Cargo).count()
+        return {
+            "vessels_count": vessel_count,
+            "cargoes_count": cargo_count,
+            "last_update": datetime.now().isoformat()
+        }
+    finally:
+        db.close()

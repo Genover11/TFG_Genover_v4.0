@@ -3,7 +3,19 @@
 
 {% block content %}
 <div class="max-w-6xl mx-auto">
-    <h1 class="text-3xl font-bold mb-8">Cargoes</h1>
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Cargoes</h1>
+        <div class="space-x-4">
+            <span id="last-update" class="text-gray-500"></span>
+            <button onclick="refreshData()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                Refresh Data
+            </button>
+            <button onclick="processEmails()" class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+                Process Emails Now
+            </button>
+        </div>
+    </div>
+    
     <div class="bg-white rounded-lg shadow overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -12,12 +24,111 @@
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
                 </tr>
             </thead>
             <tbody id="cargoes-table" class="bg-white divide-y divide-gray-200">
                 <!-- Data will be inserted here by JavaScript -->
+                <tr>
+                    <td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td>
+                </tr>
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+}
+
+function refreshData() {
+    const cargoesTable = document.getElementById('cargoes-table');
+    const lastUpdate = document.getElementById('last-update');
+    
+    cargoesTable.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center">Loading...</td></tr>';
+    
+    fetch('/api/v1/cargoes/')
+        .then(response => response.json())
+        .then(data => {
+            cargoesTable.innerHTML = '';
+            data.forEach(cargo => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50';
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm font-medium text-gray-900">${cargo.cargo_type || '-'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${cargo.quantity ? cargo.quantity.toLocaleString() + ' MT' : '-'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${cargo.load_port || '-'} → ${cargo.discharge_port || '-'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <div class="text-sm text-gray-900">${cargo.rate || '-'}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatDate(cargo.created_at)}
+                    </td>
+                `;
+                cargoesTable.appendChild(row);
+            });
+
+            if (data.length === 0) {
+                cargoesTable.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">
+                            No cargoes found
+                        </td>
+                    </tr>
+                `;
+            }
+
+            lastUpdate.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            cargoesTable.innerHTML = `
+                <tr>
+                    <td colspan="5" class="px-6 py-4 text-center text-red-500">
+                        Error loading data
+                    </td>
+                </tr>
+            `;
+        });
+}
+
+function processEmails() {
+    const button = event.target;
+    button.disabled = true;
+    button.textContent = 'Processing...';
+    
+    fetch('/api/v1/process-emails/', { 
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        refreshData();
+        button.textContent = 'Process Emails Now';
+        button.disabled = false;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        button.textContent = 'Error - Try Again';
+        button.disabled = false;
+    });
+}
+
+// Load initial data
+refreshData();
+
+// Refresh data every 60 seconds
+setInterval(refreshData, 60000);
+</script>
 {% endblock %}
