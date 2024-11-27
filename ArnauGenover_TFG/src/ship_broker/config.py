@@ -8,12 +8,15 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     
     # Database
-    SQLALCHEMY_DATABASE_URL: str = "sqlite:///./ship_broker.db"
+    SQLALCHEMY_DATABASE_URL: str = "sqlite:///./src/ship_broker/ship_broker.db"
     
     # Email settings
     EMAIL_ADDRESS: str = ""
     EMAIL_PASSWORD: str = ""
     IMAP_SERVER: str = "imap.gmail.com"
+    
+    # OpenAI API
+    OPENAI_API_KEY: str = ""
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -25,5 +28,4 @@ class Settings(BaseSettings):
 def get_settings():
     return Settings()
 
-# Export settings instance
 settings = get_settings()
