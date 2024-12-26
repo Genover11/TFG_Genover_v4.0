@@ -25,15 +25,33 @@
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
             </thead>
             <tbody id="cargoes-table" class="bg-white divide-y divide-gray-200">
                 <!-- Data will be inserted here by JavaScript -->
                 <tr>
-                    <td colspan="5" class="px-6 py-4 text-center text-gray-500">Loading...</td>
+                    <td colspan="6" class="px-6 py-4 text-center text-gray-500">Loading...</td>
                 </tr>
             </tbody>
         </table>
+    </div>
+
+    <!-- Modal for Available Vessels -->
+    <div id="vesselsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
+        <div class="relative top-20 mx-auto p-5 border w-4/5 shadow-lg rounded-md bg-white">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-medium text-gray-900">Available Vessels</h3>
+                <button onclick="closeVesselsModal()" class="text-gray-400 hover:text-gray-500">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div id="vessels-list" class="mt-4 space-y-4">
+                <!-- Vessels will be loaded here -->
+            </div>
+        </div>
     </div>
 </div>
 
@@ -44,11 +62,56 @@ function formatDate(dateString) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
+async function showAvailableVessels(cargoId) {
+    try {
+        document.getElementById('vessels-list').innerHTML = '<div class="text-center py-4">Loading vessels...</div>';
+        document.getElementById('vesselsModal').classList.remove('hidden');
+
+        const response = await fetch(`/api/v1/match/cargo/${cargoId}/vessels`);
+        const matches = await response.json();
+        
+        const vesselsHtml = matches.length ? matches.map(match => `
+            <div class="bg-white p-4 rounded-lg shadow">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h4 class="text-lg font-medium text-gray-900">${match.vessel.name}</h4>
+                        <div class="mt-2 text-sm text-gray-600">
+                            <p><span class="font-medium">DWT:</span> ${match.vessel.dwt.toLocaleString()} MT</p>
+                            <p><span class="font-medium">Position:</span> ${match.vessel.position}</p>
+                            <p><span class="font-medium">ETA:</span> ${match.vessel.eta ? formatDate(match.vessel.eta) : 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                            match.score > 0.8 ? 'bg-green-100 text-green-800' :
+                            match.score > 0.6 ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'
+                        }">
+                            Match: ${(match.score * 100).toFixed()}%
+                        </span>
+                    </div>
+                </div>
+                <p class="mt-2 text-sm text-gray-600">${match.reason}</p>
+            </div>
+        `).join('') : '<div class="text-center py-4 text-gray-500">No suitable vessels found at loading port</div>';
+
+        document.getElementById('vessels-list').innerHTML = vesselsHtml;
+    } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('vessels-list').innerHTML = 
+            '<div class="text-center py-4 text-red-500">Error loading vessels</div>';
+    }
+}
+
+function closeVesselsModal() {
+    document.getElementById('vesselsModal').classList.add('hidden');
+}
+
 function refreshData() {
     const cargoesTable = document.getElementById('cargoes-table');
     const lastUpdate = document.getElementById('last-update');
     
-    cargoesTable.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center">Loading...</td></tr>';
+    cargoesTable.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center">Loading...</td></tr>';
     
     fetch('/api/v1/cargoes/')
         .then(response => response.json())
@@ -73,6 +136,12 @@ function refreshData() {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         ${formatDate(cargo.created_at)}
                     </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <button onclick="showAvailableVessels(${cargo.id})" 
+                                class="text-indigo-600 hover:text-indigo-900 text-sm font-medium">
+                            Find Vessels
+                        </button>
+                    </td>
                 `;
                 cargoesTable.appendChild(row);
             });
@@ -80,7 +149,7 @@ function refreshData() {
             if (data.length === 0) {
                 cargoesTable.innerHTML = `
                     <tr>
-                        <td colspan="5" class="px-6 py-4 text-center text-gray-500">
+                        <td colspan="6" class="px-6 py-4 text-center text-gray-500">
                             No cargoes found
                         </td>
                     </tr>
@@ -93,7 +162,7 @@ function refreshData() {
             console.error('Error:', error);
             cargoesTable.innerHTML = `
                 <tr>
-                    <td colspan="5" class="px-6 py-4 text-center text-red-500">
+                    <td colspan="6" class="px-6 py-4 text-center text-red-500">
                         Error loading data
                     </td>
                 </tr>
@@ -124,6 +193,13 @@ function processEmails() {
         button.disabled = false;
     });
 }
+
+// Close modal when clicking outside
+document.getElementById('vesselsModal').addEventListener('click', function(event) {
+    if (event.target === this) {
+        closeVesselsModal();
+    }
+});
 
 // Load initial data
 refreshData();

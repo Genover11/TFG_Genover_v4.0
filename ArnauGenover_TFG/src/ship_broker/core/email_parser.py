@@ -430,6 +430,20 @@ class EmailParser:
                     vessels.append(vessel)
         
         return vessels
+    def is_cargo_section(self, text: str) -> bool:
+        """Check if text is about cargo"""
+        cargo_indicators = [
+            r'\bCARGO\b',
+            r'\bLAYCAN\b',
+            r'\bFREIGHT\b',
+            r'\bRATE\b',
+            r'\bPROPOSE\s+SUITABLE\s+CGOES\b',
+            r'\bMT\b',
+            r'\bQUANTITY\b',
+            r'\bDWCC\b',
+            r'\bCBFT\b'
+        ]
+        return any(re.search(pattern, text, re.IGNORECASE) for pattern in cargo_indicators)
 
     def parse_date(self, date_str: str) -> Optional[datetime]:
         """Parse various date formats"""
