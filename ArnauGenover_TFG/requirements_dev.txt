@@ -1,4 +1,5 @@
 # Core dependencies
+python==3.12.1  # Specific Python version
 fastapi>=0.115.5
 uvicorn>=0.27.0
 sqlalchemy>=2.0.0
@@ -14,6 +15,13 @@ passlib[bcrypt]>=1.7.4
 
 # AI Integration
 openai>=1.12.0         
+
+# Web Scraping
+selenium>=4.18.1
+webdriver-manager>=4.0.1
+beautifulsoup4>=4.12.0  # For parsing HTML
+requests>=2.31.0        # For HTTP requests
+lxml>=5.1.0            # For faster HTML parsing
 
 # Testing and development
 pytest>=7.4.0
@@ -51,3 +59,8 @@ types-python-jose>=3.3.4
 types-passlib>=1.7.7
 typing-extensions>=4.7.1
 
+# ChromeDriver dependencies (for Selenium)
+chromedriver-autoinstaller>=0.6.3
+selenium-stealth>=1.0.6  # For avoiding detection
+python-anticaptcha>=1.0.0  # For handling CAPTCHAs if needed
+fake-useragent>=1.4.0  # For rotating user agents

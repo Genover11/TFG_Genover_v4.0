@@ -1,4 +1,3 @@
-    # src/ship_broker/api/routes/test.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Dict
@@ -17,47 +16,51 @@ logger = logging.getLogger(__name__)
 @router.post("/test/create-sample-data/")
 async def create_sample_data(db: Session = Depends(get_db)):
     """Create sample vessels and cargoes for testing"""
-    # Sample vessels
-    sample_vessels = [
-        Vessel(
-            name="STAR BULK",
-            dwt=82000.0,
-            position="SINGAPORE",
-            eta=datetime.now(),
-            vessel_type="BULK CARRIER",
-            description="Modern bulk carrier available for charter"
-        ),
-        Vessel(
-            name="PACIFIC TRADER",
-            dwt=55000.0,
-            position="ROTTERDAM",
-            vessel_type="SUPRAMAX",
-            description="Supramax vessel open for orders"
-        )
-    ]
-    
-    for vessel in sample_vessels:
-        db.add(vessel)
-    
-    # Sample cargoes
-    sample_cargoes = [
-        Cargo(
-            cargo_type="GRAIN",
-            quantity=50000.0,
-            load_port="SANTOS",
-            discharge_port="QINGDAO",
-            rate="$25.50",
-            description="Soybean cargo for prompt delivery",
-            laycan_start=datetime.now(),
-            laycan_end=datetime.now()
-        )
-    ]
-    
-    for cargo in sample_cargoes:
-        db.add(cargo)
-    
-    db.commit()
-    return {"message": "Sample data created successfully"}
+    try:
+        # Sample vessels
+        sample_vessels = [
+            Vessel(
+                name="STAR BULK",
+                dwt=82000.0,
+                position="SINGAPORE",
+                eta=datetime.now(),
+                vessel_type="BULK CARRIER",
+                description="Modern bulk carrier available for charter"
+            ),
+            Vessel(
+                name="PACIFIC TRADER",
+                dwt=55000.0,
+                position="ROTTERDAM",
+                vessel_type="SUPRAMAX",
+                description="Supramax vessel open for orders"
+            )
+        ]
+        
+        for vessel in sample_vessels:
+            db.add(vessel)
+        
+        # Sample cargoes
+        sample_cargoes = [
+            Cargo(
+                cargo_type="GRAIN",
+                quantity=50000.0,
+                load_port="SANTOS",
+                discharge_port="QINGDAO",
+                rate="$25.50",
+                description="Soybean cargo for prompt delivery",
+                laycan_start=datetime.now(),
+                laycan_end=datetime.now()
+            )
+        ]
+        
+        for cargo in sample_cargoes:
+            db.add(cargo)
+        
+        db.commit()
+        return {"message": "Sample data created successfully"}
+    except Exception as e:
+        logger.error(f"Error creating sample data: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/test/debug-last-email/")
 async def debug_last_email(
@@ -81,45 +84,51 @@ async def debug_last_email(
             "content": last_email['content']
         }
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Debug error: {str(e)}"
-        )
+        logger.error(f"Error debugging last email: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/test/db-contents/")
 async def view_db_contents(db: Session = Depends(get_db)):
     """View all database contents"""
-    vessels = db.query(Vessel).all()
-    cargoes = db.query(Cargo).all()
-    
-    return {
-        "vessels": [
-            {
-                "name": v.name,
-                "type": v.vessel_type,
-                "position": v.position,
-                "dwt": v.dwt,
-                "created_at": v.created_at
-            } for v in vessels
-        ],
-        "cargoes": [
-            {
-                "type": c.cargo_type,
-                "quantity": c.quantity,
-                "load_port": c.load_port,
-                "discharge_port": c.discharge_port,
-                "created_at": c.created_at
-            } for c in cargoes
-        ]
-    }
+    try:
+        vessels = db.query(Vessel).all()
+        cargoes = db.query(Cargo).all()
+        
+        return {
+            "vessels": [
+                {
+                    "name": v.name,
+                    "type": v.vessel_type,
+                    "position": v.position,
+                    "dwt": v.dwt,
+                    "created_at": v.created_at
+                } for v in vessels
+            ],
+            "cargoes": [
+                {
+                    "type": c.cargo_type,
+                    "quantity": c.quantity,
+                    "load_port": c.load_port,
+                    "discharge_port": c.discharge_port,
+                    "created_at": c.created_at
+                } for c in cargoes
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error viewing DB contents: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/test/clear-database/")
 async def clear_database(db: Session = Depends(get_db)):
     """Clear all data from database"""
-    db.query(Vessel).delete()
-    db.query(Cargo).delete()
-    db.commit()
-    return {"message": "Database cleared successfully"}
+    try:
+        db.query(Vessel).delete()
+        db.query(Cargo).delete()
+        db.commit()
+        return {"message": "Database cleared successfully"}
+    except Exception as e:
+        logger.error(f"Error clearing database: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/test/last-email/")
 async def check_last_email(
@@ -179,6 +188,7 @@ async def check_last_email(
             "gemini_result": gemini_result
         }
     except Exception as e:
+        logger.error(f"Error checking last email: {str(e)}")
         return {
             "status": "error",
             "message": str(e),
@@ -186,9 +196,7 @@ async def check_last_email(
         }
 
 @router.get("/test/parse-email/")
-async def test_email_parsing(
-    settings: Settings = Depends(get_settings)
-):
+async def test_email_parsing(settings: Settings = Depends(get_settings)):
     """Test endpoint to check email parsing"""
     try:
         parser = EmailParser(
@@ -224,6 +232,7 @@ async def test_email_parsing(
         }
         
     except Exception as e:
+        logger.error(f"Error parsing email: {str(e)}")
         return {
             "status": "error",
             "message": str(e)

@@ -1,88 +1,171 @@
 # src/ship_broker/core/cargo_tracker.py
-# from shipnext.com 
 
-import requests
-from bs4 import BeautifulSoup
-from typing import List, Dict
+
+from typing import List, Dict, Optional
 from datetime import datetime
 import logging
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from webdriver_manager.chrome import ChromeDriverManager
+import time
 
 logger = logging.getLogger(__name__)
 
 class CargoTracker:
-    def __init__(self, api_key: str = None):
-        self.api_key = api_key
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
+    def __init__(self):
+        self.setup_driver()
+
+    def setup_driver(self):
+        """Setup Chrome driver with headless mode"""
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument("--headless")  # Run in headless mode
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Hide automation
+            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
+            chrome_options.add_argument(f'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
+
+            service = Service(ChromeDriverManager().install())
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            
+            # Set window size
+            self.driver.set_window_size(1920, 1080)
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize Chrome driver: {str(e)}")
+            self.driver = None
 
     def get_cargoes_for_vessel(self, vessel_data: Dict) -> List[Dict]:
         """Find available cargoes suitable for a specific vessel"""
         try:
-            # Construct search URL based on vessel position
-            base_url = f"https://shipnext.com/cargo-search"
-            params = {
-                'loading_port': vessel_data.get('position', ''),
-                'vessel_type': vessel_data.get('type', ''),
-                'dwt_min': max(0, int(vessel_data.get('dwt', 0) * 0.8)),  # 80% of vessel DWT
-                'dwt_max': int(vessel_data.get('dwt', 0))
-            }
+            if not self.driver:
+                return self._get_mock_data(vessel_data)
 
-            return self._scrape_cargo_data(base_url, params)
+            logger.info(f"Searching for cargoes suitable for vessel at {vessel_data.get('position', 'Unknown')}")
+
+            # Navigate to the cargoes page (modify URL according to the actual website)
+            # Example: using Baltic Exchange or similar platform
+            search_url = "https://shipnext.com/cargo-list"  # Replace with actual URL
+            self.driver.get(search_url)
+            time.sleep(5)  # Wait for page to load
+
+            # Find cargo listings
+            try:
+                cargo_elements = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_all_elements_located((By.CLASS_NAME, "cargo-listing"))
+                )
+                
+                cargoes = []
+                for element in cargo_elements:
+                    try:
+                        cargo_data = {
+                            'cargo_type': element.find_element(By.CSS_SELECTOR, '.cargo-type').text.strip(),
+                            'quantity': self._parse_quantity(
+                                element.find_element(By.CSS_SELECTOR, '.quantity').text
+                            ),
+                            'load_port': element.find_element(By.CSS_SELECTOR, '.load-port').text.strip(),
+                            'discharge_port': element.find_element(By.CSS_SELECTOR, '.discharge-port').text.strip(),
+                            'laycan_start': self._parse_date(
+                                element.find_element(By.CSS_SELECTOR, '.laycan-start').text
+                            ),
+                            'laycan_end': self._parse_date(
+                                element.find_element(By.CSS_SELECTOR, '.laycan-end').text
+                            ),
+                            'description': element.find_element(By.CSS_SELECTOR, '.details').text.strip()
+                        }
+                        if self._is_cargo_suitable(cargo_data, vessel_data):
+                            cargoes.append(cargo_data)
+                    except NoSuchElementException:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error extracting cargo data: {str(e)}")
+                        continue
+
+                return cargoes
+
+            except TimeoutException:
+                logger.warning("Timeout waiting for cargo listings")
+                return self._get_mock_data(vessel_data)
+
         except Exception as e:
             logger.error(f"Error fetching cargoes: {str(e)}")
-            return []
+            return self._get_mock_data(vessel_data)
 
-    def _scrape_cargo_data(self, url: str, params: Dict) -> List[Dict]:
+        finally:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except:
+                    pass
+
+    def _is_cargo_suitable(self, cargo: Dict, vessel: Dict) -> bool:
+        """Check if cargo is suitable for vessel based on capacity and position"""
         try:
-            response = requests.get(url, headers=self.headers, params=params)
-            if response.status_code == 200:
-                return self._extract_cargo_listings(response.text)
-            logger.error(f"Failed to fetch data: {response.status_code}")
-            return []
+            vessel_dwt = vessel.get('dwt', 0)
+            cargo_quantity = cargo.get('quantity', 0)
+            
+            if not vessel_dwt or not cargo_quantity:
+                return False
+            
+            # Basic size compatibility check
+            if cargo_quantity > vessel_dwt:
+                return False
+                
+            if cargo_quantity < vessel_dwt * 0.3:  # Too small for vessel
+                return False
+            
+            return True
+            
         except Exception as e:
-            logger.error(f"Error scraping cargo data: {str(e)}")
-            return []
+            logger.error(f"Error checking cargo suitability: {str(e)}")
+            return False
 
-    def _extract_cargo_listings(self, html_content: str) -> List[Dict]:
-        soup = BeautifulSoup(html_content, 'html.parser')
-        cargoes = []
-
-        # Adjust these selectors based on ShipNext's actual HTML structure
-        for cargo_div in soup.find_all('div', {'class': 'cargo-listing'}):
-            try:
-                cargo_data = {
-                    'cargo_type': self._get_text(cargo_div, 'div', 'cargo-type'),
-                    'quantity': self._parse_quantity(self._get_text(cargo_div, 'div', 'cargo-quantity')),
-                    'load_port': self._get_text(cargo_div, 'div', 'loading-port'),
-                    'discharge_port': self._get_text(cargo_div, 'div', 'discharge-port'),
-                    'laycan_start': self._parse_date(self._get_text(cargo_div, 'div', 'laycan-start')),
-                    'laycan_end': self._parse_date(self._get_text(cargo_div, 'div', 'laycan-end')),
-                    'details': self._get_text(cargo_div, 'div', 'cargo-details'),
-                    'last_updated': datetime.now()
-                }
-                cargoes.append(cargo_data)
-            except Exception as e:
-                logger.error(f"Error extracting cargo listing: {str(e)}")
-                continue
-
-        return cargoes
-
-    @staticmethod
-    def _get_text(element, tag, class_name) -> str:
-        found = element.find(tag, {'class': class_name})
-        return found.get_text(strip=True) if found else ""
-
-    @staticmethod
-    def _parse_quantity(quantity_str: str) -> float:
+    def _parse_quantity(self, text: str) -> Optional[float]:
+        """Parse quantity value from text"""
         try:
-            return float(quantity_str.split()[0].replace(',', ''))
-        except:
-            return 0.0
-
-    @staticmethod
-    def _parse_date(date_str: str) -> Optional[datetime]:
-        try:
-            return datetime.strptime(date_str, '%Y-%m-%d')
-        except:
+            import re
+            quantity_match = re.search(r'(\d+(?:,\d+)?)\s*(?:MT|KMT|K|TONS?)', text)
+            if quantity_match:
+                return float(quantity_match.group(1).replace(',', ''))
             return None
+        except Exception:
+            return None
+
+    def _parse_date(self, date_text: str) -> Optional[str]:
+        """Parse date from text to ISO format"""
+        try:
+            return datetime.strptime(date_text.strip(), '%Y-%m-%d').isoformat()
+        except Exception:
+            return None
+
+    def _get_mock_data(self, vessel_data: Dict) -> List[Dict]:
+        """Return mock data when scraping fails"""
+        vessel_dwt = vessel_data.get('dwt', 50000)
+        return [
+            {
+                'cargo_type': 'GRAIN',
+                'quantity': vessel_dwt * 0.8,
+                'load_port': vessel_data.get('position', 'SINGAPORE'),
+                'discharge_port': 'ROTTERDAM',
+                'laycan_start': datetime.now().isoformat(),
+                'laycan_end': datetime.now().isoformat(),
+                'description': 'Sample grain cargo'
+            },
+            {
+                'cargo_type': 'COAL',
+                'quantity': vessel_dwt * 0.9,
+                'load_port': 'NEWCASTLE',
+                'discharge_port': 'QINGDAO',
+                'laycan_start': datetime.now().isoformat(),
+                'laycan_end': datetime.now().isoformat(),
+                'description': 'Sample coal cargo'
+            }
+        ]
