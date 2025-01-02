@@ -6,5 +6,6 @@ from .email_processing import router as email_processing
 from .test import router as test
 from .matching import router as matching
 from .search import router as search
+from .auctions import router as auctions
 
-__all__ = ["vessels", "cargoes", "email_processing", "test", "matching", "search"]
+__all__ = ["vessels", "cargoes", "email_processing", "test", "matching", "search", "auctions"]

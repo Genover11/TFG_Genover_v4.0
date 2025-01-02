@@ -1,0 +1,195 @@
+<!-- src/ship_broker/web/templates/auctions.html -->
+
+<!-- src/ship_broker/web/templates/auctions.html -->
+
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Vessel Space Auctions</h1>
+        <div class="space-x-4">
+            <span id="last-update" class="text-gray-500"></span>
+            <button onclick="refreshAuctions()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Active Auctions -->
+    <div class="mb-12">
+        <h2 class="text-2xl font-semibold mb-6">Active Auctions</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="active-auctions">
+            <!-- Active auctions will be inserted here -->
+            <div class="text-center text-gray-500 py-8">Loading auctions...</div>
+        </div>
+    </div>
+
+    <!-- Past Auctions -->
+    <div class="mt-12">
+        <h2 class="text-2xl font-semibold mb-6">Past Auctions</h2>
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vessel</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Space</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Price</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Final Price</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="past-auctions" class="bg-white divide-y divide-gray-200">
+                    <!-- Past auctions will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function formatPrice(price) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+}
+
+function refreshAuctions() {
+    // Get active auctions
+    fetch('/api/v1/auctions/active')
+        .then(response => response.json())
+        .then(auctions => {
+            const container = document.getElementById('active-auctions');
+            if (auctions.length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-3 text-center text-gray-500 py-8">
+                        No active auctions
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = auctions.map(auction => `
+                <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                    <div class="p-6">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="text-xl font-semibold">${auction.vessel_name}</h3>
+                                <p class="text-sm text-gray-600">${auction.vessel_type}</p>
+                            </div>
+                            <span class="px-2 py-1 text-xs font-bold rounded-full ${
+                                auction.days_remaining <= 3 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                            }">${auction.days_remaining} days remaining</span>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <p class="text-gray-600">Available Space: ${auction.space_mt.toLocaleString()} MT</p>
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <p class="text-lg font-semibold text-blue-900">Current Price: 
+                                    <span class="text-2xl text-blue-700">${formatPrice(auction.current_price)}/MT</span>
+                                </p>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                                <div class="bg-blue-600 h-2.5 rounded-full" style="width: ${
+                                    ((auction.start_price - auction.current_price) / 
+                                    (auction.start_price - auction.min_price) * 100).toFixed(1)
+                                }%"></div>
+                            </div>
+                            <div class="flex justify-between text-sm text-gray-500 mt-1">
+                                <div>
+                                    <span class="text-xs text-gray-400">Min Price:</span><br>
+                                    <span>${formatPrice(auction.min_price)}</span>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-xs text-gray-400">Start Price:</span><br>
+                                    <span>${formatPrice(auction.start_price)}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="acceptPrice(${auction.id})" 
+                                class="w-full mt-4 bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600">
+                            Accept Current Price
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        });
+
+    // Get past auctions
+    fetch('/api/v1/auctions/past')
+        .then(response => response.json())
+        .then(auctions => {
+            const container = document.getElementById('past-auctions');
+            if (auctions.length === 0) {
+                container.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-6 py-4 text-center text-gray-500">
+                            No past auctions
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            container.innerHTML = auctions.map(auction => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        ${auction.vessel_name}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${auction.space_mt.toLocaleString()} MT
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatPrice(auction.start_price)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatPrice(auction.final_price)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatDate(auction.end_date)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs font-semibold rounded-full ${
+                            auction.status === 'COMPLETED' 
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-800'
+                        }">
+                            ${auction.status}
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        });
+
+    document.getElementById('last-update').textContent = 
+        `Last updated: ${new Date().toLocaleTimeString()}`;
+}
+
+async function acceptPrice(auctionId) {
+    try {
+        const response = await fetch(`/api/v1/auctions/${auctionId}/accept`, {
+            method: 'POST'
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            refreshAuctions();
+            alert('Price accepted successfully!');
+        } else {
+            alert('Failed to accept price: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error accepting price');
+    }
+}
+
+// Initial load
+refreshAuctions();
+
+// Refresh every minute
+setInterval(refreshAuctions, 60000);
+</script>
+{% endblock %}

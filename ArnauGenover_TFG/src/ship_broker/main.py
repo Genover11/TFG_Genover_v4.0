@@ -9,7 +9,7 @@ import os
 import logging
 
 from .config import Settings, get_settings
-from .api.routes import vessels, cargoes, email_processing, test, matching
+from .api.routes import vessels, cargoes, email_processing, test, matching, auctions
 from .core.database import Base, engine
 from .core.scheduler import start_scheduler
 
@@ -67,6 +67,7 @@ app.include_router(cargoes, prefix="/api/v1", tags=["cargoes"])
 app.include_router(email_processing, prefix="/api/v1", tags=["email"])
 app.include_router(matching, prefix="/api/v1", tags=["matching"])
 app.include_router(test, prefix="/api/v1", tags=["test"])
+app.include_router(auctions, prefix="/api/v1", tags=["auctions"])  # Changed this line
 
 @app.on_event("startup")
 async def startup_event():
@@ -112,6 +113,15 @@ async def matches_page(request: Request):
         return templates.TemplateResponse("matches.html", {"request": request})
     except Exception as e:
         logger.error(f"Error rendering matches page: {str(e)}")
+        return {"error": "Error rendering page"}
+
+@app.get("/auctions")
+async def auctions_page(request: Request):
+    """Render auctions page"""
+    try:
+        return templates.TemplateResponse("auctions.html", {"request": request})
+    except Exception as e:
+        logger.error(f"Error rendering auctions page: {str(e)}")
         return {"error": "Error rendering page"}
 
 @app.get("/health")

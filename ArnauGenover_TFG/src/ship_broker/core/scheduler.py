@@ -1,42 +1,49 @@
 # src/ship_broker/core/scheduler.py
-import asyncio
-from datetime import datetime
-from ..core.database import SessionLocal, Vessel, Cargo
-from ..core.email_parser import EmailParser
-from ..config import settings
 
-async def process_emails():
-    """Process emails and save data to database"""
-    db = SessionLocal()
+import asyncio
+import logging
+from datetime import datetime
+from sqlalchemy.orm import Session
+from .database import SessionLocal
+from .email_parser import EmailParser
+from .auction_background import check_vessels_for_auctions
+from ..config import get_settings
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+async def process_emails(db: Session):
+    """Process new emails"""
     try:
         parser = EmailParser(
-            email_address=settings.EMAIL_ADDRESS,
-            password=settings.EMAIL_PASSWORD,
-            db=db,  # Pass the database session
-            imap_server=settings.IMAP_SERVER
+            settings.EMAIL_ADDRESS,
+            settings.EMAIL_PASSWORD,
+            db,
+            settings.IMAP_SERVER
         )
-        
-        emails = parser.get_emails(days=1)  # Get last 24 hours emails
-        
+        emails = parser.get_emails(days=1)
         for email_data in emails:
-            try:
-                vessels, cargoes = parser.process_and_store_email(email_data)
-                print(f"Processed email at {datetime.now()}: Found {len(vessels)} vessels and {len(cargoes)} cargoes")
-            except Exception as e:
-                print(f"Error processing individual email: {str(e)}")
-                continue
-                
+            parser.process_and_store_email(email_data)
     except Exception as e:
-        print(f"Error processing emails: {str(e)}")
-        db.rollback()
-    finally:
-        db.close()
+        logger.error(f"Error processing emails: {str(e)}")
 
 async def start_scheduler():
-    """Start the background task to process emails periodically"""
+    """Start background tasks"""
     while True:
         try:
-            await process_emails()
+            db = SessionLocal()
+            try:
+                # Process emails
+                await process_emails(db)
+                
+                # Check for vessels that need auctions
+                await check_vessels_for_auctions(db)
+                
+            finally:
+                db.close()
+                
         except Exception as e:
-            print(f"Scheduler error: {str(e)}")
-        await asyncio.sleep(300)  # Wait 5 minutes
+            logger.error(f"Error in scheduler: {str(e)}")
+            
+        # Wait before next check
+        await asyncio.sleep(settings.EMAIL_CHECK_INTERVAL)  # Usually 300 seconds (5 minutes)

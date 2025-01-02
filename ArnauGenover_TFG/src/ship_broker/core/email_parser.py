@@ -149,7 +149,70 @@ class EmailParser:
         return emails_data
 
 
+    def get_emails(self, days: int = 1) -> List[Dict]:
+        """Fetch emails from last X days, excluding already processed ones"""
+        logger.info(f"Fetching emails from last {days} days")
+        mail = self.connect()
+        mail.select('INBOX')
+        
+        date = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
+        _, messages = mail.search(None, f'(SINCE "{date}")')
+        
+        emails_data = []
+        processed_ids = {pe.message_id for pe in self.db.query(ProcessedEmail.message_id).all()}
+        
+        for num in messages[0].split():
+            _, msg_data = mail.fetch(num, '(RFC822)')
+            email_body = msg_data[0][1]
+            email_message = email.message_from_bytes(email_body)
+            
+            message_id = email_message["Message-ID"] or email_message["message-id"]
+            
+            # Skip if already processed
+            if message_id and message_id in processed_ids:
+                logger.info(f"Skipping already processed email: {email_message['subject']}")
+                continue
+            
+            # Skip if subject matches a previously processed email
+            subject = email_message["subject"] or ""
+            if self.db.query(ProcessedEmail).filter(
+                ProcessedEmail.subject == subject
+            ).first():
+                logger.info(f"Skipping already processed subject: {subject}")
+                continue
+            
+            content = self._get_email_content(email_message)
+            
+            logger.info(f"Found new email with subject: {subject}")
+            emails_data.append({
+                'subject': subject,
+                'content': content,
+                'message_id': message_id
+            })
+        
+        mail.close()
+        mail.logout()
+        return emails_data
+
+    
+    def has_vessel_indicators(self, text: str) -> bool:
+        """Check if text has strong vessel indicators"""
+        indicators = [
+            r'M/V\s+[A-Z]',
+            r'\bVESSEL\s+(?:DETAILS?|SPECS?|NAME)\b',
+            r'\bDWT\b',
+            r'\bIMO\s+NO\b',
+            r'\bBUILT\b',
+            r'\bFLAG\b',
+            r'\bCLASS\b',
+            r'\bVESSEL\s+POSITION\b',
+            r'\bOPEN\s+(?:AT|IN|FROM)\b',
+            r'\bETA\b'
+        ]
+        return any(re.search(pattern, text, re.IGNORECASE) for pattern in indicators)
+
     def _get_email_content(self, email_message) -> str:
+        """Extract content from email message"""
         content = ""
         if email_message.is_multipart():
             for part in email_message.walk():
@@ -227,7 +290,7 @@ class EmailParser:
 
 
     def _store_results(self, cargoes: List[CargoData], vessels: List[VesselData]):
-        """Store parsed results in database"""
+        """Store parsed results in database and create auctions for vessels with ETAs"""
         try:
             # Store cargoes
             for cargo in cargoes:
@@ -243,7 +306,10 @@ class EmailParser:
                 )
                 self.db.add(db_cargo)
             
-            # Store vessels
+            from .auction_service import AuctionService  # Import here to avoid circular imports
+            auction_service = AuctionService(self.db)
+            
+            # Store vessels and create auctions if they have ETAs
             for vessel in vessels:
                 db_vessel = Vessel(
                     name=vessel.name,
@@ -255,6 +321,11 @@ class EmailParser:
                     description=vessel.description
                 )
                 self.db.add(db_vessel)
+                self.db.flush()  # Get ID without committing
+                
+                # If vessel has ETA, create auction
+                if vessel.eta:
+                    auction_service.create_auction_for_vessel(db_vessel.id)
                 
             self.db.commit()
         except Exception as e:
