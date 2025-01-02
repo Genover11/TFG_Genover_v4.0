@@ -1,7 +1,4 @@
 <!-- src/ship_broker/web/templates/auctions.html -->
-
-<!-- src/ship_broker/web/templates/auctions.html -->
-
 {% extends "base.html" %}
 
 {% block content %}
@@ -27,16 +24,17 @@
 
     <!-- Past Auctions -->
     <div class="mt-12">
-        <h2 class="text-2xl font-semibold mb-6">Past Auctions</h2>
+        <h2 class="text-2xl font-semibold mb-6">Auction Bids History</h2>
         <div class="bg-white rounded-lg shadow overflow-hidden">
             <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vessel</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Space</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Price</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Final Price</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">End Date</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Vessel Space</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Space in Bid</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">% of Total</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sale Price/MT</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sold At</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                     </tr>
                 </thead>
@@ -59,6 +57,41 @@ function formatDate(dateString) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
+function calculateSpaceForPercentage(totalSpace, percentage) {
+    return Math.floor(totalSpace * (percentage / 100));
+}
+
+function getAvailablePercentages(soldPercentage) {
+    const percentages = [25, 50, 75, 100];
+    const remainingPercentage = Math.floor(100 - soldPercentage); // Round down to avoid floating point issues
+    return percentages.filter(p => p <= remainingPercentage);
+}
+
+async function acceptPrice(auctionId, spacePercentage = 100) {
+    try {
+        const response = await fetch(`/api/v1/auctions/${auctionId}/accept`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                space_percentage: spacePercentage
+            })
+        });
+        const result = await response.json();
+        
+        if (result.success) {
+            refreshAuctions();
+            alert('Price accepted successfully!');
+        } else {
+            alert('Failed to accept price: ' + result.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error accepting price');
+    }
+}
+
 function refreshAuctions() {
     // Get active auctions
     fetch('/api/v1/auctions/active')
@@ -73,7 +106,33 @@ function refreshAuctions() {
                 return;
             }
 
-            container.innerHTML = auctions.map(auction => `
+            container.innerHTML = auctions.map(auction => {
+                const soldPercentage = Math.floor((auction.space_sold_mt / auction.space_mt) * 100);
+                const availablePercentages = getAvailablePercentages(soldPercentage);
+                
+                let buttonsHtml = '';
+                if (availablePercentages.length > 0) {
+                    buttonsHtml = `
+                        <div class="mt-4 grid grid-cols-${Math.min(availablePercentages.length, 2)} gap-2">
+                            ${availablePercentages.map(percentage => `
+                                <button onclick="acceptPrice(${auction.id}, ${percentage})" 
+                                        class="bg-green-${percentage === 100 ? '500' : (percentage >= 75 ? '300' : (percentage >= 50 ? '200' : '100'))} 
+                                               ${percentage === 100 ? 'text-white' : 'text-green-700'} 
+                                               py-2 px-4 rounded 
+                                               hover:bg-green-${percentage === 100 ? '600' : (percentage >= 75 ? '400' : (percentage >= 50 ? '300' : '200'))} 
+                                               border border-green-${percentage === 100 ? '600' : (percentage >= 75 ? '500' : (percentage >= 50 ? '400' : '300'))}">
+                                    ${percentage}% (${calculateSpaceForPercentage(auction.space_mt, percentage).toLocaleString()} MT)
+                                </button>
+                            `).join('')}
+                        </div>`;
+                } else {
+                    buttonsHtml = `
+                        <div class="mt-4 p-4 bg-gray-50 rounded-lg text-center text-gray-500">
+                            No more space available for bidding
+                        </div>`;
+                }
+
+                return `
                 <div class="bg-white rounded-lg shadow-lg overflow-hidden">
                     <div class="p-6">
                         <div class="flex justify-between items-start">
@@ -86,7 +145,10 @@ function refreshAuctions() {
                             }">${auction.days_remaining} days remaining</span>
                         </div>
                         <div class="mt-4 space-y-2">
-                            <p class="text-gray-600">Available Space: ${auction.space_mt.toLocaleString()} MT</p>
+                            <div class="flex justify-between">
+                                <p class="text-gray-600">Total Space: ${auction.space_mt.toLocaleString()} MT</p>
+                                <p class="text-gray-600">Sold: ${auction.space_sold_mt.toLocaleString()} MT (${soldPercentage}%)</p>
+                            </div>
                             <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
                                 <p class="text-lg font-semibold text-blue-900">Current Price: 
                                     <span class="text-2xl text-blue-700">${formatPrice(auction.current_price)}/MT</span>
@@ -109,81 +171,67 @@ function refreshAuctions() {
                                 </div>
                             </div>
                         </div>
-                        <button onclick="acceptPrice(${auction.id})" 
-                                class="w-full mt-4 bg-green-500 text-white py-2 px-4 rounded hover:bg-green-600">
-                            Accept Current Price
-                        </button>
+                        
+                        <!-- Percentage-based bidding options -->
+                        ${buttonsHtml}
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         });
 
     // Get past auctions
     fetch('/api/v1/auctions/past')
         .then(response => response.json())
-        .then(auctions => {
+        .then(bids => {
             const container = document.getElementById('past-auctions');
-            if (auctions.length === 0) {
+            if (bids.length === 0) {
                 container.innerHTML = `
                     <tr>
-                        <td colspan="6" class="px-6 py-4 text-center text-gray-500">
-                            No past auctions
+                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">
+                            No auction bids yet
                         </td>
                     </tr>`;
                 return;
             }
 
-            container.innerHTML = auctions.map(auction => `
+            container.innerHTML = bids.map(bid => {
+                const bidPercentage = (bid.bid_space_mt / bid.space_mt * 100).toFixed(1);
+                const remainingSpace = bid.remaining_space_mt;
+                const isCompleted = remainingSpace <= 0;
+
+                return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        ${auction.vessel_name}
+                        ${bid.vessel_name}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ${auction.space_mt.toLocaleString()} MT
+                        ${bid.space_mt.toLocaleString()} MT
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ${formatPrice(auction.start_price)}
+                        ${bid.bid_space_mt.toLocaleString()} MT
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ${formatPrice(auction.final_price)}
+                        ${bidPercentage}%
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ${formatDate(auction.end_date)}
+                        ${formatPrice(bid.sale_price)}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        ${formatDate(bid.sold_at)}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="px-2 py-1 text-xs font-semibold rounded-full ${
-                            auction.status === 'COMPLETED' 
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
+                            isCompleted ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
                         }">
-                            ${auction.status}
+                            ${isCompleted ? 'FINAL BID' : 'PARTIAL BID'}
                         </span>
                     </td>
-                </tr>
-            `).join('');
+                </tr>`;
+            }).join('');
         });
 
     document.getElementById('last-update').textContent = 
         `Last updated: ${new Date().toLocaleTimeString()}`;
-}
-
-async function acceptPrice(auctionId) {
-    try {
-        const response = await fetch(`/api/v1/auctions/${auctionId}/accept`, {
-            method: 'POST'
-        });
-        const result = await response.json();
-        
-        if (result.success) {
-            refreshAuctions();
-            alert('Price accepted successfully!');
-        } else {
-            alert('Failed to accept price: ' + result.message);
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        alert('Error accepting price');
-    }
 }
 
 // Initial load

@@ -11,12 +11,14 @@ class VesselBase(BaseModel):
     position: Optional[str] = None
     eta: Optional[datetime] = None
     description: Optional[str] = None
+    open_date: Optional[datetime] = None  # Added this field
 
 class VesselCreate(VesselBase):
     pass
 
 class Vessel(VesselBase):
     id: int
+    created_at: Optional[datetime] = None  # Added this field
     last_updated: Optional[datetime] = None
 
     class Config:

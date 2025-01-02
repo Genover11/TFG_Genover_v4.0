@@ -1,23 +1,26 @@
 # src/ship_broker/api/routes/auctions.py
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import List, Dict
 import logging
 from datetime import datetime, timedelta
 import random
+from pydantic import BaseModel, Field
 
-from ...core.database import Auction, AuctionStatus, Vessel
+from ...core.database import Auction, AuctionStatus, Vessel, AuctionBid  # Added AuctionBid here
 from ...core.auction_service import AuctionService
 from ..dependencies import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+class AcceptBidRequest(BaseModel):
+    space_percentage: float = Field(default=100.0, ge=0.0, le=100.0)
+
 @router.get("/debug/create-test-auction", tags=["debug"])
 async def create_test_auction(db: Session = Depends(get_db)):
     """Create a test auction with sample data"""
-    logger.info("Starting test auction creation...")
     try:
         # Create a new test vessel with random data
         vessel_types = ["BULK CARRIER", "SUPRAMAX", "PANAMAX", "HANDYSIZE"]
@@ -64,13 +67,14 @@ async def create_test_auction(db: Session = Depends(get_db)):
 @router.get("/auctions/active")
 async def get_active_auctions(db: Session = Depends(get_db)):
     """Get all active auctions"""
-    logger.info("Getting active auctions...")
     try:
         service = AuctionService(db)
         service.update_auction_prices()
         
+        # Get auctions that are active AND have available space
         auctions = db.query(Auction).filter(
-            Auction.status == AuctionStatus.ACTIVE
+            Auction.status == AuctionStatus.ACTIVE,
+            Auction.end_date > datetime.utcnow()  # Not expired
         ).all()
         
         logger.info(f"Found {len(auctions)} active auctions")
@@ -80,42 +84,51 @@ async def get_active_auctions(db: Session = Depends(get_db)):
             "vessel_name": auction.vessel.name if auction.vessel else "Unknown",
             "vessel_type": auction.vessel.vessel_type if auction.vessel else "Unknown",
             "space_mt": auction.space_mt,
+            "space_sold_mt": auction.space_sold_mt or 0,
+            "available_space_mt": auction.space_mt - (auction.space_sold_mt or 0),
             "start_price": auction.start_price,
             "current_price": auction.current_price,
             "min_price": auction.min_price,
             "days_remaining": (auction.end_date - datetime.utcnow()).days if auction.end_date else 0,
             "end_date": auction.end_date.isoformat() if auction.end_date else None
-        } for auction in auctions]
+        } for auction in auctions if auction.space_mt > (auction.space_sold_mt or 0)]
     except Exception as e:
         logger.error(f"Error getting active auctions: {str(e)}")
         return []
 
 @router.get("/auctions/past")
 async def get_past_auctions(db: Session = Depends(get_db)):
-    """Get completed auctions"""
-    logger.info("Getting past auctions...")
+    """Get all auction bids history"""
     try:
-        auctions = db.query(Auction).filter(
-            Auction.status == AuctionStatus.COMPLETED
-        ).order_by(Auction.end_date.desc()).limit(10).all()
+        # Get all bids ordered by most recent first
+        bids = db.query(AuctionBid).\
+            join(Auction).\
+            join(Vessel).\
+            order_by(AuctionBid.sold_at.desc()).\
+            limit(50).all()
         
-        logger.info(f"Found {len(auctions)} past auctions")
         return [{
-            "id": auction.id,
-            "vessel_name": auction.vessel.name if auction.vessel else "Unknown",
-            "space_mt": auction.space_mt,
-            "start_price": auction.start_price,
-            "final_price": auction.current_price,
-            "end_date": auction.end_date.isoformat() if auction.end_date else None,
-            "status": auction.status.value
-        } for auction in auctions]
+            "id": bid.id,
+            "vessel_name": bid.auction.vessel.name if bid.auction.vessel else "Unknown",
+            "space_mt": bid.auction.space_mt,
+            "bid_space_mt": bid.bid_space_mt,
+            "remaining_space_mt": bid.auction.space_mt - bid.auction.space_sold_mt,
+            "percentage_sold": (bid.bid_space_mt / bid.auction.space_mt * 100),
+            "sale_price": bid.sale_price,
+            "sold_at": bid.sold_at.isoformat() if bid.sold_at else None,
+            "status": "FINAL BID" if bid.auction.space_mt - bid.auction.space_sold_mt <= 0 else "PARTIAL BID"
+        } for bid in bids]
     except Exception as e:
-        logger.error(f"Error getting past auctions: {str(e)}")
+        logger.error(f"Error getting auction bids: {str(e)}")
         return []
 
 @router.post("/auctions/{auction_id}/accept")
-async def accept_auction_price(auction_id: int, db: Session = Depends(get_db)):
-    """Accept current auction price"""
+async def accept_auction_price(
+    auction_id: int, 
+    bid: AcceptBidRequest = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Accept current auction price for a percentage of total space"""
     try:
         auction = db.query(Auction).filter(Auction.id == auction_id).first()
         if not auction:
@@ -124,11 +137,46 @@ async def accept_auction_price(auction_id: int, db: Session = Depends(get_db)):
         if auction.status != AuctionStatus.ACTIVE:
             raise HTTPException(status_code=400, detail="Auction is not active")
             
-        # Complete the auction
-        auction.status = AuctionStatus.COMPLETED
+        if datetime.utcnow() > auction.end_date:
+            raise HTTPException(status_code=400, detail="Auction has expired")
+
+        # Calculate space based on total space
+        space_to_purchase = (auction.space_mt * bid.space_percentage / 100)
+        total_space_after_purchase = (auction.space_sold_mt or 0) + space_to_purchase
+        
+        # Validate the purchase
+        if total_space_after_purchase > auction.space_mt:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot purchase {bid.space_percentage}%. Only {((auction.space_mt - auction.space_sold_mt) / auction.space_mt * 100):.1f}% remaining"
+            )
+            
+        # Create new bid record
+        new_bid = AuctionBid(
+            auction_id=auction.id,
+            bid_space_mt=space_to_purchase,
+            sale_price=auction.current_price
+        )
+        db.add(new_bid)
+            
+        # Update auction
+        auction.space_sold_mt = total_space_after_purchase
+        
+        # If all space is sold (or very close to it due to rounding), complete the auction
+        if total_space_after_purchase >= auction.space_mt * 0.999:  # Using 99.9% to account for floating point rounding
+            auction.status = AuctionStatus.COMPLETED
+            logger.info(f"Auction {auction_id} completed - all space sold")
+        else:
+            logger.info(f"Auction {auction_id} partial sale: {space_to_purchase:.2f} MT ({bid.space_percentage}%)")
+        
         db.commit()
         
-        return {"success": True, "message": "Price accepted successfully"}
+        return {
+            "success": True, 
+            "message": f"Successfully purchased {space_to_purchase:.2f} MT ({bid.space_percentage}%) of space"
+        }
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error accepting auction price: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
