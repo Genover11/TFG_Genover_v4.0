@@ -1,20 +1,18 @@
 # src/ship_broker/core/database.py
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Enum, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 import enum
+from passlib.context import CryptContext
 from ..config import settings
 
 engine = create_engine(settings.SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class AuctionStatus(enum.Enum):
-    ACTIVE = "active"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class ProcessedEmail(Base):
     __tablename__ = "processed_emails"
@@ -24,6 +22,32 @@ class ProcessedEmail(Base):
     subject = Column(String)
     processed_at = Column(DateTime, default=datetime.utcnow)
 
+class AuctionStatus(enum.Enum):
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    vessels = relationship("Vessel", back_populates="owner")
+    cargoes = relationship("Cargo", back_populates="owner")
+    auctions = relationship("Auction", back_populates="owner")
+
+    def verify_password(self, plain_password: str) -> bool:
+        return pwd_context.verify(plain_password, self.hashed_password)
+
+    @staticmethod
+    def get_password_hash(password: str) -> str:
+        return pwd_context.hash(password)
 
 class Vessel(Base):
     __tablename__ = "vessels"
@@ -36,10 +60,13 @@ class Vessel(Base):
     open_date = Column(DateTime, nullable=True)
     vessel_type = Column(String, nullable=True)
     description = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)  # Make sure this line exists
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Add relationship to auctions
+    # Add owner relationship
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("User", back_populates="vessels")
+    
+    # Existing relationships
     auctions = relationship("Auction", back_populates="vessel", cascade="all, delete-orphan")
 
 class Cargo(Base):
@@ -55,18 +82,10 @@ class Cargo(Base):
     rate = Column(String, nullable=True)
     description = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
-
-class AuctionBid(Base):
-    __tablename__ = "auction_bids"
     
-    id = Column(Integer, primary_key=True, index=True)
-    auction_id = Column(Integer, ForeignKey("auctions.id"))
-    bid_space_mt = Column(Float)  # Space purchased in this bid
-    sale_price = Column(Float)    # Price at which space was sold
-    sold_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    auction = relationship("Auction", back_populates="bids")
+    # Add owner relationship
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("User", back_populates="cargoes")
 
 class Auction(Base):
     __tablename__ = "auctions"
@@ -75,21 +94,37 @@ class Auction(Base):
     vessel_id = Column(Integer, ForeignKey("vessels.id"))
     start_date = Column(DateTime, default=datetime.utcnow)
     end_date = Column(DateTime)
-    space_mt = Column(Float)  # Available space in metric tons
-    start_price = Column(Float)  # Price per MT at start
-    current_price = Column(Float)  # Current price per MT
-    min_price = Column(Float)  # Minimum acceptable price per MT
-    daily_reduction = Column(Float)  # Daily price reduction amount
+    space_mt = Column(Float)
+    space_sold_mt = Column(Float, default=0.0)  # Added this field
+    start_price = Column(Float)
+    current_price = Column(Float)
+    min_price = Column(Float)
+    daily_reduction = Column(Float)
     status = Column(Enum(AuctionStatus), default=AuctionStatus.ACTIVE)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Columns for tracking total space sold
-    space_sold_mt = Column(Float, default=0.0)  # Total amount of space sold
-    
-    # Relationships
+    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("User", back_populates="auctions")
     vessel = relationship("Vessel", back_populates="auctions")
     bids = relationship("AuctionBid", back_populates="auction", cascade="all, delete-orphan")
+
+
+class AuctionBid(Base):
+    __tablename__ = "auction_bids"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    auction_id = Column(Integer, ForeignKey("auctions.id"))
+    bid_space_mt = Column(Float)
+    sale_price = Column(Float)
+    sold_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Add bidder relationship
+    bidder_id = Column(Integer, ForeignKey("users.id"))
+    bidder = relationship("User")
+    
+    # Existing relationships
+    auction = relationship("Auction", back_populates="bids")
 
 # Create tables
 Base.metadata.create_all(bind=engine)

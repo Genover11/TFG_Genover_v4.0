@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     AUCTION_START_PRICE: float = float(os.getenv("AUCTION_START_PRICE", "20.0"))  # USD per MT
     AUCTION_MIN_PRICE: float = float(os.getenv("AUCTION_MIN_PRICE", "10.0"))  # USD per MT
     
+    # Authentication settings
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "BarcelonaMadrid2025.")  # Use env var if available
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

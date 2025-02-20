@@ -3,7 +3,6 @@ import email
 import imaplib
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import logging
 from sqlalchemy.orm import Session
@@ -107,47 +106,6 @@ class EmailParser:
         mail = imaplib.IMAP4_SSL(self.imap_server)
         mail.login(self.email_address, self.password)
         return mail
-
-    def get_emails(self, days: int = 1) -> List[Dict]:
-        """Fetch emails from last X days, excluding already processed ones"""
-        logger.info(f"Fetching emails from last {days} days")
-        mail = self.connect()
-        mail.select('INBOX')
-        
-        date = (datetime.now() - timedelta(days=days)).strftime("%d-%b-%Y")
-        _, messages = mail.search(None, f'(SINCE "{date}")')
-        
-        emails_data = []
-        for num in messages[0].split():
-            _, msg_data = mail.fetch(num, '(RFC822)')
-            email_body = msg_data[0][1]
-            email_message = email.message_from_bytes(email_body)
-            
-            message_id = email_message["Message-ID"] or email_message["message-id"]
-            
-            # Skip if already processed
-            if message_id:
-                existing = self.db.query(ProcessedEmail).filter(
-                    ProcessedEmail.message_id == message_id
-                ).first()
-                if existing:
-                    logger.info(f"Skipping already processed email: {email_message['subject']}")
-                    continue
-            
-            content = self._get_email_content(email_message)
-            subject = email_message["subject"] or ""
-            
-            logger.info(f"Found new email with subject: {subject}")
-            emails_data.append({
-                'subject': subject,
-                'content': content,
-                'message_id': message_id
-            })
-        
-        mail.close()
-        mail.logout()
-        return emails_data
-
 
     def get_emails(self, days: int = 1) -> List[Dict]:
         """Fetch emails from last X days, excluding already processed ones"""

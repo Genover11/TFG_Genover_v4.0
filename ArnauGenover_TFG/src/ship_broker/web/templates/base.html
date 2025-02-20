@@ -31,6 +31,30 @@
                         </a>
                     </div>
                 </div>
+                <!-- User Info/Login Section -->
+                <div class="flex items-center">
+                    {% if current_user %}
+                        <div class="flex items-center space-x-4">
+                            <span class="text-gray-700">{{ current_user.username }}</span>
+                            <div class="relative">
+                                <button onclick="toggleDropdown()" class="flex items-center space-x-2 text-gray-700 hover:text-gray-900">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                <div id="userDropdown" class="hidden absolute right-0 mt-2 py-2 w-48 bg-white rounded-md shadow-lg z-50">
+                                    <a href="/profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Profile</a>
+                                    <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Settings</a>
+                                    <div class="border-t border-gray-100"></div>
+                                    <a href="/logout" class="block px-4 py-2 text-sm text-red-600 hover:bg-gray-100">Logout</a>
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <a href="/login" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">Login</a>
+                        <a href="/register" class="ml-4 px-4 py-2 border border-blue-500 text-blue-500 rounded hover:bg-blue-50">Register</a>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </nav>
@@ -40,5 +64,22 @@
             {% block content %}{% endblock %}
         </div>
     </main>
+
+    <script>
+        function toggleDropdown() {
+            const dropdown = document.getElementById('userDropdown');
+            dropdown.classList.toggle('hidden');
+        }
+
+        // Close dropdown when clicking outside
+        window.onclick = function(event) {
+            if (!event.target.matches('button') && !event.target.matches('svg') && !event.target.matches('path')) {
+                const dropdown = document.getElementById('userDropdown');
+                if (!dropdown.classList.contains('hidden')) {
+                    dropdown.classList.add('hidden');
+                }
+            }
+        }
+    </script>
 </body>
 </html>

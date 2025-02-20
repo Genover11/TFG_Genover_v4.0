@@ -11,16 +11,15 @@ logger = logging.getLogger(__name__)
 class AuctionService:
     def __init__(self, db: Session):
         self.db = db
-
+    
+    
     def create_auction_for_vessel(self, vessel_id: int) -> Optional[Auction]:
-        """Create an auction for a vessel if it has an ETA"""
         try:
             vessel = self.db.query(Vessel).filter(Vessel.id == vessel_id).first()
             if not vessel:
                 logger.error(f"No vessel found with ID {vessel_id}")
                 return None
 
-            # Check if vessel already has an active auction
             existing_auction = self.db.query(Auction).filter(
                 Auction.vessel_id == vessel_id,
                 Auction.status == AuctionStatus.ACTIVE
@@ -30,27 +29,25 @@ class AuctionService:
                 logger.info(f"Vessel {vessel_id} already has an active auction")
                 return existing_auction
 
-            # Calculate auction parameters
             start_date = datetime.utcnow()
-            end_date = start_date + timedelta(days=15)  # 15-day auction period
+            end_date = start_date + timedelta(days=15)
             
-            # Calculate prices
             if vessel.dwt:
                 start_price = 20.0  # USD per MT
                 min_price = 10.0    # USD per MT
-                daily_reduction = (start_price - min_price) / 15  # Even reduction over 15 days
+                daily_reduction = (start_price - min_price) / 15
             else:
                 logger.error(f"Vessel {vessel_id} has no DWT specified")
                 return None
 
-            # Create auction
             auction = Auction(
                 vessel_id=vessel.id,
                 start_date=start_date,
                 end_date=end_date,
-                space_mt=vessel.dwt,  # Use vessel's DWT as available space
+                space_mt=vessel.dwt,
+                space_sold_mt=0.0,  # Initialize sold space to 0
                 start_price=start_price,
-                current_price=start_price,  # Initially same as start price
+                current_price=start_price,
                 min_price=min_price,
                 daily_reduction=daily_reduction,
                 status=AuctionStatus.ACTIVE

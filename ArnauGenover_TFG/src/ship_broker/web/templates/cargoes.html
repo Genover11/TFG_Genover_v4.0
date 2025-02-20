@@ -38,7 +38,7 @@
 
     <!-- Modal for Available Vessels -->
     <div id="vesselsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full z-50">
-        <div class="relative top-20 mx-auto p-5 border w-4/5 shadow-lg rounded-md bg-white">
+        <div class="relative top-20 mx-auto p-5 border w-4/5 max-w-3xl shadow-lg rounded-md bg-white">
             <div class="flex justify-between items-center mb-4">
                 <h3 class="text-lg font-medium text-gray-900">Available Vessels</h3>
                 <button onclick="closeVesselsModal()" class="text-gray-400 hover:text-gray-500">
@@ -61,6 +61,98 @@ function formatDate(dateString) {
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
 }
 
+function formatQuantity(quantity) {
+    if (!quantity) return '-';
+    return quantity.toLocaleString() + ' MT';
+}
+
+// In cargoes.html, update the showAvailableVessels function
+
+async function showAvailableVessels(cargoId) {
+    console.log('Finding vessels for cargo:', cargoId);
+    try {
+        const vesselsModal = document.getElementById('vesselsModal');
+        const vesselsList = document.getElementById('vessels-list');
+        vesselsModal.classList.remove('hidden');
+        vesselsList.innerHTML = `
+            <div class="flex items-center justify-center py-4">
+                <svg class="animate-spin h-5 w-5 mr-3 text-gray-600" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Loading available vessels...
+            </div>
+        `;
+
+        // Updated URL to match new endpoint in cargoes router
+        const response = await fetch(`/api/v1/cargoes/match/${cargoId}/vessels`);
+        console.log('API Response:', response);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API error: ${response.status} - ${errorText}`);
+        }
+
+        const vessels = await response.json();
+        console.log('Received vessels:', vessels);
+
+        if (!vessels || vessels.length === 0) {
+            vesselsList.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    No suitable vessels found
+                </div>
+            `;
+            return;
+        }
+
+        vesselsList.innerHTML = vessels.map(match => `
+            <div class="bg-white p-4 rounded-lg shadow border border-gray-200 mb-4">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h4 class="text-lg font-medium text-gray-900">
+                            ${match.vessel.name || 'Unknown Vessel'}
+                            <span class="text-sm text-gray-500 ml-2">(${match.vessel.mmsi || 'No MMSI'})</span>
+                        </h4>
+                        <div class="mt-2 space-y-1">
+                            <p class="text-sm text-gray-600">
+                                <span class="font-medium">Type:</span> ${match.vessel.type || 'Unknown'}
+                            </p>
+                            <p class="text-sm text-gray-600">
+                                <span class="font-medium">Position:</span> ${match.vessel.position || 'Unknown'}
+                            </p>
+                            <p class="text-sm text-gray-600">
+                                <span class="font-medium">Distance:</span> ${match.vessel.distance_to_load || 'Unknown'}
+                            </p>
+                            <p class="text-sm text-gray-600">
+                                <span class="font-medium">Status:</span> ${match.vessel.status || 'Unknown'}
+                            </p>
+                            <p class="text-sm text-gray-600">
+                                <span class="font-medium">Speed:</span> ${match.vessel.speed || 'Unknown'}
+                            </p>
+                        </div>
+                    </div>
+                    <span class="px-3 py-1 text-sm font-medium rounded-full ${
+                        match.score > 0.8 ? 'bg-green-100 text-green-800' :
+                        match.score > 0.5 ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                    }">
+                        Match: ${Math.round(match.score * 100)}%
+                    </span>
+                </div>
+                <p class="mt-2 text-sm text-gray-600">${match.reason || ''}</p>
+            </div>
+        `).join('');
+
+    } catch (error) {
+        console.error('Error finding vessels:', error);
+        document.getElementById('vessels-list').innerHTML = `
+            <div class="text-center py-8 text-red-500">
+                Error loading vessels: ${error.message}
+            </div>
+        `;
+    }
+}
+
 function closeVesselsModal() {
     document.getElementById('vesselsModal').classList.add('hidden');
 }
@@ -72,15 +164,17 @@ function refreshData() {
     // Show loading state
     cargoesTable.innerHTML = '<tr><td colspan="6" class="px-6 py-4 text-center text-gray-500">Loading...</td></tr>';
     
-    fetch('/api/v1/cargoes/')
-        .then(response => {
+    fetch('/api/v1/cargoes')
+        .then(async response => {
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                const errorText = await response.text();
+                throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
             }
             return response.json();
         })
         .then(data => {
-            console.log('Received data:', data); // Debug log
+            console.log('Received cargoes:', data);
+            
             if (!Array.isArray(data) || data.length === 0) {
                 cargoesTable.innerHTML = `
                     <tr>
@@ -91,7 +185,7 @@ function refreshData() {
                 return;
             }
 
-            // Clear the table before adding new rows
+            // Clear the table
             cargoesTable.innerHTML = '';
 
             // Add each cargo as a row
@@ -103,7 +197,7 @@ function refreshData() {
                         <div class="text-sm font-medium text-gray-900">${cargo.cargo_type || '-'}</div>
                     </td>
                     <td class="px-6 py-4">
-                        <div class="text-sm text-gray-900">${cargo.quantity ? cargo.quantity.toLocaleString() + ' MT' : '-'}</div>
+                        <div class="text-sm text-gray-900">${formatQuantity(cargo.quantity)}</div>
                     </td>
                     <td class="px-6 py-4">
                         <div class="text-sm text-gray-900">${cargo.load_port || '-'} → ${cargo.discharge_port || '-'}</div>
@@ -127,7 +221,7 @@ function refreshData() {
             lastUpdate.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
         })
         .catch(error => {
-            console.error('Error fetching data:', error);
+            console.error('Error fetching cargoes:', error);
             cargoesTable.innerHTML = `
                 <tr>
                     <td colspan="6" class="px-6 py-4 text-center text-red-500">
@@ -138,76 +232,8 @@ function refreshData() {
         });
 }
 
-async function showAvailableVessels(cargoId) {
-    try {
-        document.getElementById('vesselsModal').classList.remove('hidden');
-        document.getElementById('vessels-list').innerHTML = `
-            <div class="flex items-center justify-center py-4">
-                <svg class="animate-spin h-5 w-5 mr-3 text-gray-600" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-                </svg>
-                Loading available vessels...
-            </div>
-        `;
-
-        const response = await fetch(`/api/v1/match/cargo/${cargoId}/vessels`);
-        if (!response.ok) throw new Error('Network response was not ok');
-        const vessels = await response.json();
-
-        document.getElementById('vessels-list').innerHTML = vessels.length 
-            ? vessels.map(match => `
-                <div class="bg-white p-4 rounded-lg shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h4 class="text-lg font-medium text-gray-900">${match.vessel.name}</h4>
-                            <div class="mt-2 text-sm text-gray-600">
-                                <p><span class="font-medium">DWT:</span> ${match.vessel.dwt.toLocaleString()} MT</p>
-                                <p><span class="font-medium">Position:</span> ${match.vessel.position || 'N/A'}</p>
-                                <p><span class="font-medium">ETA:</span> ${match.vessel.eta ? formatDate(match.vessel.eta) : 'N/A'}</p>
-                            </div>
-                        </div>
-                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                            match.score > 0.8 ? 'bg-green-100 text-green-800' :
-                            match.score > 0.6 ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                        }">
-                            Match: ${(match.score * 100).toFixed()}%
-                        </span>
-                    </div>
-                    <p class="mt-2 text-sm text-gray-600">${match.reason}</p>
-                </div>
-            `).join('') 
-            : '<div class="text-center py-4 text-gray-500">No suitable vessels found</div>';
-    } catch (error) {
-        console.error('Error:', error);
-        document.getElementById('vessels-list').innerHTML = 
-            '<div class="text-center py-4 text-red-500">Error loading vessels</div>';
-    }
-}
-
 function processEmails() {
-    const button = event.target;
-    button.disabled = true;
-    button.textContent = 'Processing...';
-    
-    fetch('/api/v1/process-emails/', { 
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-    })
-    .then(response => response.json())
-    .then(data => {
-        refreshData();
-        button.textContent = 'Process Emails Now';
-        button.disabled = false;
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        button.textContent = 'Error - Try Again';
-        button.disabled = false;
-    });
+    // Add email processing function if needed
 }
 
 // Close modal when clicking outside

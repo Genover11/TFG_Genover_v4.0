@@ -47,52 +47,58 @@ class CargoTracker:
         """Find available cargoes suitable for a specific vessel"""
         try:
             if not self.driver:
+                logger.warning("No web driver available - returning mock cargo data")
                 return self._get_mock_data(vessel_data)
 
             logger.info(f"Searching for cargoes suitable for vessel at {vessel_data.get('position', 'Unknown')}")
 
-            # Navigate to the cargoes page (modify URL according to the actual website)
-            # Example: using Baltic Exchange or similar platform
-            search_url = "https://shipnext.com/cargo-list"  # Replace with actual URL
+            # Updated URL for cargoes
+            search_url = "https://shipnext.com/cargoes/all"  # More likely to contain real cargo data
             self.driver.get(search_url)
             time.sleep(5)  # Wait for page to load
 
             # Find cargo listings
             try:
                 cargo_elements = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_all_elements_located((By.CLASS_NAME, "cargo-listing"))
+                    EC.presence_of_all_elements_located((By.CLASS_NAME, "cargo-card"))  # Updated class name
                 )
                 
                 cargoes = []
                 for element in cargo_elements:
                     try:
                         cargo_data = {
-                            'cargo_type': element.find_element(By.CSS_SELECTOR, '.cargo-type').text.strip(),
+                            'cargo_type': element.find_element(By.CSS_SELECTOR, '.cargo-name').text.strip(),
                             'quantity': self._parse_quantity(
-                                element.find_element(By.CSS_SELECTOR, '.quantity').text
+                                element.find_element(By.CSS_SELECTOR, '.cargo-quantity').text
                             ),
-                            'load_port': element.find_element(By.CSS_SELECTOR, '.load-port').text.strip(),
+                            'load_port': element.find_element(By.CSS_SELECTOR, '.loading-port').text.strip(),
                             'discharge_port': element.find_element(By.CSS_SELECTOR, '.discharge-port').text.strip(),
                             'laycan_start': self._parse_date(
-                                element.find_element(By.CSS_SELECTOR, '.laycan-start').text
+                                element.find_element(By.CSS_SELECTOR, '.laycan').text.split('-')[0]
                             ),
                             'laycan_end': self._parse_date(
-                                element.find_element(By.CSS_SELECTOR, '.laycan-end').text
+                                element.find_element(By.CSS_SELECTOR, '.laycan').text.split('-')[1]
                             ),
-                            'description': element.find_element(By.CSS_SELECTOR, '.details').text.strip()
+                            'description': element.find_element(By.CSS_SELECTOR, '.cargo-description').text.strip(),
+                            'is_mock': False  # Flag to indicate real data
                         }
                         if self._is_cargo_suitable(cargo_data, vessel_data):
                             cargoes.append(cargo_data)
-                    except NoSuchElementException:
+                    except NoSuchElementException as e:
+                        logger.debug(f"Missing element in cargo card: {str(e)}")
                         continue
                     except Exception as e:
                         logger.error(f"Error extracting cargo data: {str(e)}")
                         continue
 
-                return cargoes
+                if cargoes:
+                    return cargoes
+                
+                logger.warning("No suitable cargoes found - returning mock data")
+                return self._get_mock_data(vessel_data)
 
             except TimeoutException:
-                logger.warning("Timeout waiting for cargo listings")
+                logger.warning("Web scraping failed (timeout) - returning mock cargo data for demonstration purposes")
                 return self._get_mock_data(vessel_data)
 
         except Exception as e:
@@ -105,6 +111,7 @@ class CargoTracker:
                     self.driver.quit()
                 except:
                     pass
+
 
     def _is_cargo_suitable(self, cargo: Dict, vessel: Dict) -> bool:
         """Check if cargo is suitable for vessel based on capacity and position"""
@@ -146,26 +153,30 @@ class CargoTracker:
         except Exception:
             return None
 
+
     def _get_mock_data(self, vessel_data: Dict) -> List[Dict]:
         """Return mock data when scraping fails"""
         vessel_dwt = vessel_data.get('dwt', 50000)
         return [
             {
-                'cargo_type': 'GRAIN',
+                'cargo_type': '[MOCK] GRAIN',
                 'quantity': vessel_dwt * 0.8,
                 'load_port': vessel_data.get('position', 'SINGAPORE'),
                 'discharge_port': 'ROTTERDAM',
                 'laycan_start': datetime.now().isoformat(),
                 'laycan_end': datetime.now().isoformat(),
-                'description': 'Sample grain cargo'
+                'description': '[MOCK DATA] Sample grain cargo',
+                'is_mock': True
             },
             {
-                'cargo_type': 'COAL',
+                'cargo_type': '[MOCK] COAL',
                 'quantity': vessel_dwt * 0.9,
                 'load_port': 'NEWCASTLE',
                 'discharge_port': 'QINGDAO',
                 'laycan_start': datetime.now().isoformat(),
                 'laycan_end': datetime.now().isoformat(),
-                'description': 'Sample coal cargo'
+                'description': '[MOCK DATA] Sample coal cargo',
+                'is_mock': True
             }
         ]
+    

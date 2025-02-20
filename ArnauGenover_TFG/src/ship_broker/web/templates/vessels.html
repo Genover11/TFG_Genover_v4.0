@@ -1,4 +1,5 @@
 <!-- src/ship_broker/web/templates/vessels.html -->
+
 {% extends "base.html" %}
 
 {% block content %}
@@ -106,44 +107,72 @@ async function showAvailableCargoes(vesselId, vesselName) {
             </div>
         `;
 
+        console.log('Fetching cargoes for vessel:', vesselId);
         const response = await fetch(`/api/v1/match/vessel/${vesselId}/cargoes`);
-        const cargoes = await response.json();
         
-        const cargoesHtml = cargoes.length ? cargoes.map(cargo => `
-            <div class="bg-white p-4 rounded-lg shadow border border-gray-200">
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const matches = await response.json();
+        console.log('Received cargo matches:', matches);
+
+        if (!matches || matches.length === 0) {
+            document.getElementById('cargoes-list').innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    No compatible cargoes found for ${vesselName}
+                </div>
+            `;
+            return;
+        }
+
+        const cargoesHtml = matches.map(match => `
+            <div class="bg-white p-4 rounded-lg shadow border border-gray-200 mb-4">
                 <div class="flex justify-between items-start">
                     <div>
-                        <h4 class="text-lg font-medium text-gray-900">${cargo.cargo_type}</h4>
+                        <h4 class="text-lg font-medium text-gray-900">${match.cargo.type}</h4>
                         <div class="mt-2 space-y-1">
                             <p class="text-sm text-gray-600">
-                                <span class="font-medium">Quantity:</span> ${formatDWT(cargo.quantity)}
+                                <span class="font-medium">Quantity:</span> ${formatDWT(match.cargo.quantity)}
                             </p>
                             <p class="text-sm text-gray-600">
-                                <span class="font-medium">Route:</span> ${cargo.load_port || '-'} → ${cargo.discharge_port || '-'}
+                                <span class="font-medium">Route:</span> ${match.cargo.load_port || '-'} → ${match.cargo.discharge_port || '-'}
                             </p>
-                            <p class="text-sm text-gray-600">
-                                <span class="font-medium">Laycan:</span> ${formatDate(cargo.laycan_start)} - ${formatDate(cargo.laycan_end)}
-                            </p>
+                            ${match.cargo.laycan_start ? `
+                                <p class="text-sm text-gray-600">
+                                    <span class="font-medium">Laycan:</span> ${formatDate(match.cargo.laycan_start)} - ${formatDate(match.cargo.laycan_end)}
+                                </p>
+                            ` : ''}
+                            ${match.cargo.rate ? `
+                                <p class="text-sm text-gray-600">
+                                    <span class="font-medium">Rate:</span> ${match.cargo.rate}
+                                </p>
+                            ` : ''}
                         </div>
                     </div>
-                    <span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                        Compatible
+                    <span class="px-3 py-1 text-sm font-medium rounded-full ${
+                        match.score > 0.7 ? 'bg-green-100 text-green-800' :
+                        match.score > 0.5 ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                    }">
+                        Match: ${Math.round(match.score * 100)}%
                     </span>
                 </div>
-                ${cargo.details ? `<p class="mt-2 text-sm text-gray-600">${cargo.details}</p>` : ''}
+                ${match.reason ? `
+                    <div class="mt-2 p-2 bg-gray-50 rounded">
+                        <p class="text-sm text-gray-600">${match.reason}</p>
+                    </div>
+                ` : ''}
             </div>
-        `).join('') : `
-            <div class="text-center py-8 text-gray-500">
-                No compatible cargoes found for ${vesselName}
-            </div>
-        `;
+        `).join('');
 
         document.getElementById('cargoes-list').innerHTML = cargoesHtml;
+
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error finding cargoes:', error);
         document.getElementById('cargoes-list').innerHTML = `
             <div class="text-center py-8 text-red-500">
-                Error loading available cargoes
+                Error loading cargoes: ${error.message}
             </div>
         `;
     }

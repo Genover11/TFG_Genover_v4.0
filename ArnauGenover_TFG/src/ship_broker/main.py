@@ -1,6 +1,6 @@
 # src/ship_broker/main.py
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,15 +9,18 @@ import os
 import logging
 
 from .config import Settings, get_settings
-from .api.routes import vessels, cargoes, email_processing, test, matching, auctions
+from .api.routes import vessels, cargoes, email_processing, test, matching, auctions, auth
 from .core.database import Base, engine
 from .core.scheduler import start_scheduler
+from .api.routes.auth import get_current_user
+from .core.vessel_tracker import tracker
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
 logger = logging.getLogger(__name__)
 
 # Create database tables
@@ -61,65 +64,117 @@ if os.path.exists(templates_dir):
 else:
     logger.warning(f"Templates directory not found: {templates_dir}")
 
-# Include API routers
-app.include_router(vessels, prefix="/api/v1", tags=["vessels"])
-app.include_router(cargoes, prefix="/api/v1", tags=["cargoes"])
-app.include_router(email_processing, prefix="/api/v1", tags=["email"])
-app.include_router(matching, prefix="/api/v1", tags=["matching"])
-app.include_router(test, prefix="/api/v1", tags=["test"])
-app.include_router(auctions, prefix="/api/v1", tags=["auctions"])  # Changed this line
+# Include API routers with updated prefixes
+app.include_router(
+    vessels.router,
+    prefix="/api/v1/vessels",
+    tags=["vessels"]
+)
+
+app.include_router(
+    cargoes.router,
+    prefix="/api/v1/cargoes",
+    tags=["cargoes"]
+)
+
+app.include_router(
+    email_processing.router,
+    prefix="/api/v1/email",
+    tags=["email"]
+)
+
+app.include_router(
+    matching.router,
+    prefix="/api/v1/match",
+    tags=["matching"]
+)
+
+app.include_router(
+    test.router,
+    prefix="/api/v1/test",
+    tags=["test"]
+)
+
+app.include_router(
+    auctions.router,
+    prefix="/api/v1/auctions",
+    tags=["auctions"]
+)
+
+app.include_router(
+    auth.router,
+    tags=["auth"]
+)
 
 @app.on_event("startup")
 async def startup_event():
     """Start background tasks when the application starts"""
     try:
         logger.info("Starting background tasks...")
+        
+        # Start the scheduler
         asyncio.create_task(start_scheduler())
+        
+        # Start AIS stream
+        asyncio.create_task(tracker.start_tracking())
+        
         logger.info("Background tasks started successfully")
     except Exception as e:
         logger.error(f"Error starting background tasks: {str(e)}")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup when the application shuts down"""
+    try:
+        # Stop AIS stream
+        await tracker.stop_tracking()
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}")
+
 @app.get("/")
-async def home(request: Request):
+async def home(request: Request, current_user=Depends(get_current_user)):
     """Render home page"""
     try:
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "current_user": current_user
+        })
     except Exception as e:
         logger.error(f"Error rendering home page: {str(e)}")
         return {"error": "Error rendering page"}
 
 @app.get("/vessels")
-async def vessels_page(request: Request):
+async def vessels_page(request: Request, current_user=Depends(get_current_user)):
     """Render vessels page"""
     try:
-        return templates.TemplateResponse("vessels.html", {"request": request})
+        return templates.TemplateResponse("vessels.html", {
+            "request": request,
+            "current_user": current_user
+        })
     except Exception as e:
         logger.error(f"Error rendering vessels page: {str(e)}")
         return {"error": "Error rendering page"}
 
 @app.get("/cargoes")
-async def cargoes_page(request: Request):
+async def cargoes_page(request: Request, current_user=Depends(get_current_user)):
     """Render cargoes page"""
     try:
-        return templates.TemplateResponse("cargoes.html", {"request": request})
+        return templates.TemplateResponse("cargoes.html", {
+            "request": request,
+            "current_user": current_user
+        })
     except Exception as e:
         logger.error(f"Error rendering cargoes page: {str(e)}")
         return {"error": "Error rendering page"}
 
-@app.get("/matches")
-async def matches_page(request: Request):
-    """Render matches page"""
-    try:
-        return templates.TemplateResponse("matches.html", {"request": request})
-    except Exception as e:
-        logger.error(f"Error rendering matches page: {str(e)}")
-        return {"error": "Error rendering page"}
-
 @app.get("/auctions")
-async def auctions_page(request: Request):
+async def auctions_page(request: Request, current_user=Depends(get_current_user)):
     """Render auctions page"""
     try:
-        return templates.TemplateResponse("auctions.html", {"request": request})
+        return templates.TemplateResponse("auctions.html", {
+            "request": request,
+            "current_user": current_user
+        })
     except Exception as e:
         logger.error(f"Error rendering auctions page: {str(e)}")
         return {"error": "Error rendering page"}
@@ -131,7 +186,8 @@ async def health_check():
         return {
             "status": "healthy",
             "version": settings.VERSION,
-            "database": "connected" if engine else "disconnected"
+            "database": "connected" if engine else "disconnected",
+            "ais_stream": "connected" if tracker.api_key else "disconnected"
         }
     except Exception as e:
         logger.error(f"Error in health check: {str(e)}")
@@ -139,13 +195,3 @@ async def health_check():
             "status": "unhealthy",
             "error": str(e)
         }
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=8000, 
-        reload=True,
-        log_level="info"
-    )

@@ -5,7 +5,24 @@ from .cargoes import router as cargoes
 from .email_processing import router as email_processing
 from .test import router as test
 from .matching import router as matching
-from .search import router as search
 from .auctions import router as auctions
+from .auth import router as auth
 
-__all__ = ["vessels", "cargoes", "email_processing", "test", "matching", "search", "auctions"]
+# Create references to the routers
+vessels.router = vessels
+cargoes.router = cargoes
+email_processing.router = email_processing
+test.router = test
+matching.router = matching
+auctions.router = auctions
+auth.router = auth
+
+__all__ = [
+    "vessels", 
+    "cargoes", 
+    "email_processing", 
+    "test", 
+    "matching",
+    "auctions",
+    "auth"
+]
