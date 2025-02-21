@@ -108,7 +108,8 @@ async function showAvailableCargoes(vesselId, vesselName) {
         `;
 
         console.log('Fetching cargoes for vessel:', vesselId);
-        const response = await fetch(`/api/v1/match/vessel/${vesselId}/cargoes`);
+        // Updated URL to match the router endpoint
+        const response = await fetch(`/api/v1/vessels/match/${vesselId}/cargoes`);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);

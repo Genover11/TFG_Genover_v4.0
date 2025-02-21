@@ -83,11 +83,6 @@ app.include_router(
     tags=["email"]
 )
 
-app.include_router(
-    matching.router,
-    prefix="/api/v1/match",
-    tags=["matching"]
-)
 
 app.include_router(
     test.router,
