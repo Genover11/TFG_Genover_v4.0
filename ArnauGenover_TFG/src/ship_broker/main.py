@@ -15,6 +15,14 @@ from .core.scheduler import start_scheduler
 from .api.routes.auth import get_current_user
 from .core.vessel_tracker import tracker
 
+from fastapi import Form, status
+from fastapi.responses import RedirectResponse
+import jwt
+from datetime import datetime, timedelta
+from .core.database import User
+from .api.dependencies import get_db  # Added missing import
+from sqlalchemy.orm import Session  # Added missing import
+
 # Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
@@ -206,3 +214,109 @@ async def health_check():
             "status": "unhealthy",
             "error": str(e)
         }
+
+@app.get("/login")
+async def login_page(request: Request):
+    """Render login page"""
+    try:
+        return templates.TemplateResponse("login.html", {
+            "request": request,
+            "current_user": None
+        })
+    except Exception as e:
+        logger.error(f"Error rendering login page: {str(e)}")
+        return {"error": "Error rendering page"}
+
+@app.get("/register")
+async def register_page(request: Request):
+    """Render registration page"""
+    try:
+        return templates.TemplateResponse("register.html", {
+            "request": request,
+            "current_user": None
+        })
+    except Exception as e:
+        logger.error(f"Error rendering register page: {str(e)}")
+        return {"error": "Error rendering page"}
+
+@app.post("/login")
+async def login_form(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Process login form submission"""
+    try:
+        user = db.query(User).filter(User.email == username).first()
+        if not user or not user.verify_password(password):
+            return templates.TemplateResponse(
+                "login.html",
+                {"request": request, "error": "Invalid email or password", "current_user": None}
+            )
+        
+        # Create JWT token
+        token = jwt.encode(
+            {"sub": str(user.id), "exp": datetime.utcnow() + timedelta(hours=24)},
+            settings.SECRET_KEY,
+            algorithm="HS256"
+        )
+        
+        response = RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+        response.set_cookie(
+            key="session",
+            value=token,
+            httponly=True,
+            max_age=86400,  # 24 hours
+            expires=86400,
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error processing login: {str(e)}")
+        return templates.TemplateResponse(
+            "login.html",
+            {"request": request, "error": "Login failed. Please try again.", "current_user": None}
+        )
+
+@app.post("/register")
+async def register_form(
+    request: Request,
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """Process registration form submission"""
+    try:
+        # Check for existing email
+        existing_email = db.query(User).filter(User.email == email).first()
+        # Check for existing username
+        existing_username = db.query(User).filter(User.username == username).first()
+
+        errors = []
+        if existing_email:
+            errors.append("Email is already registered")
+        if existing_username:
+            errors.append("Username is already taken")
+
+        if errors:
+            return templates.TemplateResponse(
+                "register.html",
+                {"request": request, "error": " and ".join(errors), "current_user": None}
+            )
+        
+        user = User(
+            email=email,
+            username=username,
+            hashed_password=User.get_password_hash(password)
+        )
+        db.add(user)
+        db.commit()
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    except Exception as e:
+        logger.error(f"Error processing registration: {str(e)}")
+        db.rollback()
+        return templates.TemplateResponse(
+            "register.html",
+            {"request": request, "error": "Registration failed. Please try again.", "current_user": None}
+        )
