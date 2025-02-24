@@ -13,7 +13,7 @@ from ..dependencies import get_db
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.post("/process-emails/")
+@router.post("/process-emails/", include_in_schema=True)  # Added trailing slash
 async def process_emails(
     reprocess: bool = False,
     db: Session = Depends(get_db),
@@ -29,6 +29,7 @@ async def process_emails(
         )
         
         if reprocess:
+            # Clear existing data if reprocessing
             try:
                 db.query(ProcessedEmail).delete()
                 db.query(Cargo).delete()
@@ -47,7 +48,7 @@ async def process_emails(
         for email_data in emails:
             try:
                 logger.info(f"Processing email with subject: {email_data['subject']}")
-                vessels, cargoes = parser.process_and_store_email(email_data)
+                cargoes, vessels = parser.process_and_store_email(email_data)
                 total_vessels += len(vessels)
                 total_cargoes += len(cargoes)
             except Exception as e:

@@ -349,49 +349,48 @@ class EmailParser:
         text = ' '.join(text.split())
         return text
 
+    def extract_rate(self, text: str) -> Optional[str]:
+        """Extract rate information from text"""
+        rate_patterns = [
+            r'(?:FREIGHT|RATE)\s*:?\s*(?:USD|US\$|\$)?\s*([\d,\.]+)(?:\s*(?:USD|US\$|\$|\/)?\s*(?:MT|TON|PER MT|PMT))',
+            r'(?:USD|US\$|\$)\s*([\d,\.]+)(?:\s*(?:\/|\s+PER\s+)?(?:MT|TON|METRIC TON))',
+            r'([\d,\.]+)\s*(?:USD|US\$|\$)(?:\s*(?:\/|\s+PER\s+)?(?:MT|TON|METRIC TON))'
+        ]
+        
+        for pattern in rate_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                rate_value = float(match.group(1).replace(',', ''))
+                return f"USD {rate_value}/MT"
+        
+        return None
+
     def extract_cargoes(self, text: str) -> List[CargoData]:
         """Extract cargo information with regex"""
         logger.info("Extracting cargo information")
         cargoes = []
         
-        # Split email into sections
         sections = re.split(r'\n\s*\n', text)
         
-        # Look for cargo listing indicators
-        cargo_headers = [
-            r'PROPOSE\s+(?:SUITABLE\s+)?CGOES',
-            r'PLS\s+(?:DO\s+)?NOT\s+RECIRCULATE',
-            r'CARGO\s+DETAILS?:',
-            r'AVAILABLE\s+CARGOES?:',
-            r'CARGO\s+(?:REQUIRED|NEEDED|WANTED):',
-        ]
-        
-        in_cargo_section = False
-        
         for section in sections:
-            # Check if this starts a cargo section
-            if any(re.search(pattern, section, re.IGNORECASE) for pattern in cargo_headers):
-                in_cargo_section = True
-                continue
+            if self.has_cargo_indicators(section):
+                # Extract basic cargo information
+                cargo_type_match = re.search(r'(?:CARGO|COMMODITY)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
+                quantity_match = re.search(r'(?:QUANTITY|QTY|AMOUNT)\s*:?\s*([\d,\.]+)\s*(?:MT|MTS|KMT|K|TONS?)', section, re.IGNORECASE)
+                load_port_match = re.search(r'(?:LOAD(?:ING)?\s+PORT|FROM)\s*:?\s*([A-Z][A-Z\s,]+)', section, re.IGNORECASE)
+                discharge_port_match = re.search(r'(?:DISCH(?:ARGE)?\s+PORT|TO)\s*:?\s*([A-Z][A-Z\s,]+)', section, re.IGNORECASE)
                 
-            if in_cargo_section and self.has_cargo_indicators(section):
-                # Extract vessel-like info which is actually cargo
-                cargo_match = re.search(r'M/V\s+([A-Z][A-Z\s\-]+)[-\s]+(\d[\d,\.]+)\s*(?:MTS|DWT)', section, re.IGNORECASE)
-                if cargo_match:
-                    cargo_name = cargo_match.group(1).strip()
-                    quantity = float(cargo_match.group(2).replace(',', ''))
-                    
-                    # Extract additional details
-                    description = section.strip()
-                    position_match = re.search(r'OPEN\s+([A-Z][A-Z\s]+)\s+ON\s+', section, re.IGNORECASE)
-                    date_match = re.search(r'ON\s+([\d\-\.\/]+\s*(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)?(?:\s*\d{4})?)', section, re.IGNORECASE)
-                    
+                # Extract rate information
+                rate = self.extract_rate(section)
+                
+                if cargo_type_match and quantity_match:
                     cargo = CargoData(
-                        cargo_type=f"Cargo for {cargo_name}",
-                        quantity=quantity,
-                        load_port=position_match.group(1) if position_match else None,
-                        description=description,
-                        laycan_start=self.parse_date(date_match.group(1)) if date_match else None
+                        cargo_type=cargo_type_match.group(1).strip(),
+                        quantity=float(quantity_match.group(1).replace(',', '')),
+                        load_port=load_port_match.group(1).strip() if load_port_match else None,
+                        discharge_port=discharge_port_match.group(1).strip() if discharge_port_match else None,
+                        rate=rate,
+                        description=self.clean_description(section)
                     )
                     
                     if cargo.is_valid():
@@ -401,6 +400,7 @@ class EmailParser:
                         logger.debug(f"Invalid cargo entry: {cargo.cargo_type}")
         
         return cargoes
+
 
     def extract_vessels(self, text: str) -> List[VesselData]:
         """Extract vessel information with regex"""
@@ -438,14 +438,28 @@ class EmailParser:
             if name_match and (is_vessel_section or self.has_vessel_indicators(section)):
                 vessel_name = name_match.group(1).strip()
                 
+                # Extract basic information
                 dwt_match = re.search(r'(?:DWT|DEADWEIGHT)\s*:?\s*([\d,\.]+)', section, re.IGNORECASE)
                 position_match = re.search(r'(?:POSITION|PORT|LOC)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
                 type_match = re.search(r'(?:TYPE|VESSEL TYPE)\s*:?\s*([A-Z][A-Z\s]+)', section, re.IGNORECASE)
                 eta_match = re.search(r'ETA\s*:?\s*([\d\-\.\/]+\s*(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)?(?:\s*\d{4})?)', section, re.IGNORECASE)
                 open_match = re.search(r'OPEN\s*:?\s*([\d\-\.\/]+\s*(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)?(?:\s*\d{4})?)', section, re.IGNORECASE)
                 
+                # Extract rate information
+                rate_match = re.search(r'(?:FREIGHT|RATE)\s*:?\s*(?:USD|US\$|\$)?\s*([\d,\.]+)(?:\s*(?:USD|US\$|\$|\/)?\s*(?:MT|TON|PER MT|PMT))', section, re.IGNORECASE)
+                rate = None
+                if rate_match:
+                    rate_value = float(rate_match.group(1).replace(',', ''))
+                    rate = f"USD {rate_value}/MT"
+                
                 if not self.is_cargo_section(section):
                     logger.info(f"Found vessel: {vessel_name}")
+                    
+                    description = self.clean_description(section)
+                    
+                    # Add rate to description if found
+                    if rate:
+                        description = f"Rate: {rate}. " + description
                     
                     vessel = VesselData(
                         name=vessel_name,
@@ -454,11 +468,12 @@ class EmailParser:
                         vessel_type=type_match.group(1).strip() if type_match else None,
                         eta=self.parse_date(eta_match.group(1)) if eta_match else None,
                         open_date=self.parse_date(open_match.group(1)) if open_match else None,
-                        description=self.clean_description(section)
+                        description=description
                     )
                     vessels.append(vessel)
         
         return vessels
+    
     def is_cargo_section(self, text: str) -> bool:
         """Check if text is about cargo"""
         cargo_indicators = [

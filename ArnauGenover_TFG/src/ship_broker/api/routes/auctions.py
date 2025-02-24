@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import random
 from pydantic import BaseModel, Field
 
-from ...core.database import Auction, AuctionStatus, Vessel, AuctionBid  # Added AuctionBid here
+from ...core.database import Auction, AuctionStatus, Vessel, AuctionBid
 from ...core.auction_service import AuctionService
 from ..dependencies import get_db
 
@@ -18,7 +18,7 @@ router = APIRouter()
 class AcceptBidRequest(BaseModel):
     space_percentage: float = Field(default=100.0, ge=0.0, le=100.0)
 
-@router.get("/debug/create-test-auction", tags=["debug"])
+@router.get("/auctions/debug/create-test-auction", tags=["debug"])
 async def create_test_auction(db: Session = Depends(get_db)):
     """Create a test auction with sample data"""
     try:
@@ -71,13 +71,9 @@ async def get_active_auctions(db: Session = Depends(get_db)):
         service = AuctionService(db)
         service.update_auction_prices()
         
-        # Get auctions that are active AND have available space
-        auctions = db.query(Auction).filter(
-            Auction.status == AuctionStatus.ACTIVE,
-            Auction.end_date > datetime.utcnow()  # Not expired
-        ).all()
-        
+        auctions = service.get_active_auctions()
         logger.info(f"Found {len(auctions)} active auctions")
+        
         return [{
             "id": auction.id,
             "vessel_id": auction.vessel_id,
@@ -94,7 +90,7 @@ async def get_active_auctions(db: Session = Depends(get_db)):
         } for auction in auctions if auction.space_mt > (auction.space_sold_mt or 0)]
     except Exception as e:
         logger.error(f"Error getting active auctions: {str(e)}")
-        return []
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/auctions/past")
 async def get_past_auctions(db: Session = Depends(get_db)):
@@ -112,15 +108,15 @@ async def get_past_auctions(db: Session = Depends(get_db)):
             "vessel_name": bid.auction.vessel.name if bid.auction.vessel else "Unknown",
             "space_mt": bid.auction.space_mt,
             "bid_space_mt": bid.bid_space_mt,
-            "remaining_space_mt": bid.auction.space_mt - bid.auction.space_sold_mt,
-            "percentage_sold": (bid.bid_space_mt / bid.auction.space_mt * 100),
+            "remaining_space_mt": bid.auction.space_mt - bid.auction.space_sold_mt if bid.auction else 0,
+            "percentage_sold": (bid.bid_space_mt / bid.auction.space_mt * 100) if bid.auction else 0,
             "sale_price": bid.sale_price,
             "sold_at": bid.sold_at.isoformat() if bid.sold_at else None,
-            "status": "FINAL BID" if bid.auction.space_mt - bid.auction.space_sold_mt <= 0 else "PARTIAL BID"
+            "status": "FINAL BID" if bid.auction and (bid.auction.space_mt - bid.auction.space_sold_mt <= 0) else "PARTIAL BID"
         } for bid in bids]
     except Exception as e:
         logger.error(f"Error getting auction bids: {str(e)}")
-        return []
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/auctions/{auction_id}/accept")
 async def accept_auction_price(
@@ -130,40 +126,44 @@ async def accept_auction_price(
 ):
     """Accept current auction price for a percentage of total space"""
     try:
+        # Get auction and verify it exists
         auction = db.query(Auction).filter(Auction.id == auction_id).first()
         if not auction:
             raise HTTPException(status_code=404, detail="Auction not found")
             
+        # Verify auction is active
         if auction.status != AuctionStatus.ACTIVE:
             raise HTTPException(status_code=400, detail="Auction is not active")
             
+        # Verify auction hasn't expired
         if datetime.utcnow() > auction.end_date:
             raise HTTPException(status_code=400, detail="Auction has expired")
 
-        # Calculate space based on total space
+        # Calculate space and validate
         space_to_purchase = (auction.space_mt * bid.space_percentage / 100)
-        total_space_after_purchase = (auction.space_sold_mt or 0) + space_to_purchase
+        available_space = auction.space_mt - (auction.space_sold_mt or 0)
         
-        # Validate the purchase
-        if total_space_after_purchase > auction.space_mt:
+        if space_to_purchase > available_space:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Cannot purchase {bid.space_percentage}%. Only {((auction.space_mt - auction.space_sold_mt) / auction.space_mt * 100):.1f}% remaining"
+                detail=f"Cannot purchase {bid.space_percentage}%. Only {((available_space / auction.space_mt) * 100):.1f}% remaining"
             )
             
         # Create new bid record
         new_bid = AuctionBid(
             auction_id=auction.id,
             bid_space_mt=space_to_purchase,
-            sale_price=auction.current_price
+            sale_price=auction.current_price,
+            sold_at=datetime.utcnow()
         )
         db.add(new_bid)
             
         # Update auction
-        auction.space_sold_mt = total_space_after_purchase
+        auction.space_sold_mt = (auction.space_sold_mt or 0) + space_to_purchase
+        auction.last_updated = datetime.utcnow()
         
-        # If all space is sold (or very close to it due to rounding), complete the auction
-        if total_space_after_purchase >= auction.space_mt * 0.999:  # Using 99.9% to account for floating point rounding
+        # Check if auction should be completed
+        if auction.space_sold_mt >= auction.space_mt * 0.999:  # 99.9% sold
             auction.status = AuctionStatus.COMPLETED
             logger.info(f"Auction {auction_id} completed - all space sold")
         else:
@@ -173,7 +173,9 @@ async def accept_auction_price(
         
         return {
             "success": True, 
-            "message": f"Successfully purchased {space_to_purchase:.2f} MT ({bid.space_percentage}%) of space"
+            "message": f"Successfully purchased {space_to_purchase:.2f} MT ({bid.space_percentage}%) of space",
+            "current_price": auction.current_price,
+            "remaining_space": auction.space_mt - auction.space_sold_mt
         }
     except HTTPException as he:
         raise he

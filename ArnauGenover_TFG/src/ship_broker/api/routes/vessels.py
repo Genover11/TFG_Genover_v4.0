@@ -14,8 +14,8 @@ from ..dependencies import get_db
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("", response_model=List[VesselSchema])
-@router.get("/", response_model=List[VesselSchema])
+@router.get("/vessels", response_model=List[VesselSchema])
+@router.get("/vessels/", response_model=List[VesselSchema])
 async def get_vessels(
     skip: int = 0,
     limit: int = 100,
@@ -29,7 +29,7 @@ async def get_vessels(
         logger.error(f"Error getting vessels: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/match/{vessel_id}/cargoes", response_model=List[Dict])
+@router.get("/vessels/match/{vessel_id}/cargoes", response_model=List[Dict])
 async def get_matching_cargoes(vessel_id: int, db: Session = Depends(get_db)):
     """Get cargoes that match a specific vessel"""
     try:
@@ -120,7 +120,7 @@ async def get_matching_cargoes(vessel_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error matching cargoes: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{vessel_id}", response_model=VesselSchema)
+@router.get("/vessels/{vessel_id}", response_model=VesselSchema)
 async def get_vessel(vessel_id: int, db: Session = Depends(get_db)):
     """Get a specific vessel"""
     vessel = db.query(Vessel).filter(Vessel.id == vessel_id).first()

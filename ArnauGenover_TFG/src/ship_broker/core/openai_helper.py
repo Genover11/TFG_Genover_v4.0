@@ -19,6 +19,7 @@ class OpenAIHelper:
         Extract both vessel and cargo information from email content using OpenAI.
         Returns a dictionary with 'vessels' and 'cargoes' lists.
         """
+        system_prompt = self.get_system_prompt()
         prompt = f"""You are a shipping expert. Extract all vessel and cargo information from this email.
         Pay special attention to:
         1. If email mentions "PROPOSE SUITABLE CARGOES" or similar, treat vessels mentioned as cargo opportunities
@@ -62,7 +63,7 @@ class OpenAIHelper:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a shipping expert that extracts and structures vessel and cargo information from emails."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={ "type": "json_object" }
@@ -179,3 +180,42 @@ class OpenAIHelper:
             return None
 
         return None
+
+    def get_system_prompt(self) -> str:
+        """Return the system prompt for vessel and cargo extraction."""
+        return """You are a shipping expert that extracts and structures vessel and cargo information from emails.
+        Pay special attention to:
+        1. Rate information in vessel offers (e.g., "USD 42.50/MT" or "Freight Rate: USD 38.00/MT")
+        2. If email mentions "PROPOSE SUITABLE CARGOES" or similar, treat vessels mentioned as cargo opportunities
+        3. Look for quantity information (DWT, MTS, DWCC)
+        4. Look for location and date information after "OPEN"
+        5. Look for freight rates and ensure they're in USD/MT format
+        6. Identify vessel equipment like cranes, capacity, etc.
+        7. For dates, if only day-month is provided (e.g., "07-11"), assume it's in the near future
+        
+        Return ONLY a JSON object with this structure:
+        {
+            "vessels": [
+                {
+                    "name": "vessel name",
+                    "dwt": numeric value only,
+                    "position": "current position",
+                    "vessel_type": "type of vessel",
+                    "eta": "DD-MM",
+                    "open_date": "DD-MM",
+                    "description": "additional details including equipment and rates"
+                }
+            ],
+            "cargoes": [
+                {
+                    "cargo_type": "type of cargo or vessel name if it's a cargo opportunity",
+                    "quantity": numeric value only in MT,
+                    "load_port": "loading port name or open position",
+                    "discharge_port": "discharge port if mentioned",
+                    "laycan_start": "DD-MM",
+                    "laycan_end": "DD-MM",
+                    "rate": "rate if mentioned in USD/MT format",
+                    "description": "full original text and details"
+                }
+            ]
+        }"""

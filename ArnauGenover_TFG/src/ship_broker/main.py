@@ -29,7 +29,7 @@ Base.metadata.create_all(bind=engine)
 # Get settings
 settings = get_settings()
 
-# Initialize FastAPI app
+# Initialize FastAPI app first
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -51,53 +51,69 @@ app.add_middleware(
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Mount static files
-static_dir = os.path.join(current_dir, "web/static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
-else:
-    logger.warning(f"Static directory not found: {static_dir}")
+static_dir = os.path.join(current_dir, "web", "static")
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir, exist_ok=True)
+    logger.info(f"Created static directory: {static_dir}")
+
+# Create necessary subdirectories
+for subdir in ['css', 'js', 'img']:
+    subdir_path = os.path.join(static_dir, subdir)
+    if not os.path.exists(subdir_path):
+        os.makedirs(subdir_path, exist_ok=True)
+        logger.info(f"Created static subdirectory: {subdir_path}")
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+logger.info(f"Static files mounted from: {static_dir}")
 
 # Initialize templates
-templates_dir = os.path.join(current_dir, "web/templates")
-if os.path.exists(templates_dir):
-    templates = Jinja2Templates(directory=templates_dir)
-else:
-    logger.warning(f"Templates directory not found: {templates_dir}")
+templates_dir = os.path.join(current_dir, "web", "templates")
+if not os.path.exists(templates_dir):
+    os.makedirs(templates_dir, exist_ok=True)
+    logger.info(f"Created templates directory: {templates_dir}")
 
-# Include API routers with updated prefixes
+templates = Jinja2Templates(directory=templates_dir)
+
+# Include API routers with consistent prefixes
 app.include_router(
     vessels.router,
-    prefix="/api/v1/vessels",
+    prefix="/api/v1",
     tags=["vessels"]
 )
 
 app.include_router(
     cargoes.router,
-    prefix="/api/v1/cargoes",
+    prefix="/api/v1",
     tags=["cargoes"]
 )
 
 app.include_router(
     email_processing.router,
-    prefix="/api/v1/email",
+    prefix="/api/v1",
     tags=["email"]
 )
 
+app.include_router(
+    matching.router,
+    prefix="/api/v1",
+    tags=["matching"]
+)
 
 app.include_router(
     test.router,
-    prefix="/api/v1/test",
+    prefix="/api/v1",
     tags=["test"]
 )
 
 app.include_router(
     auctions.router,
-    prefix="/api/v1/auctions",
+    prefix="/api/v1",
     tags=["auctions"]
 )
 
 app.include_router(
     auth.router,
+    prefix="/api/v1",
     tags=["auth"]
 )
 

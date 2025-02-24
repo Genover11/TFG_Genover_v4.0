@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Ship Broker{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', path='img/favicon.ico') }}">
+    <!-- Add the custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -66,6 +68,66 @@
     </main>
 
     <script>
+        // API utility functions
+        async function makeRequest(url, method = 'GET', body = null) {
+            try {
+                const options = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                };
+                
+                if (body) {
+                    options.body = JSON.stringify(body);
+                }
+                
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API error: ${response.status} - ${errorText}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Request error:', error);
+                throw error;
+            }
+        }
+
+        // API endpoints
+        const api = {
+            vessels: {
+                list: () => makeRequest('/api/v1/vessels'),
+                get: (id) => makeRequest(`/api/v1/vessels/${id}`),
+                matchCargoes: (id) => makeRequest(`/api/v1/vessels/match/${id}/cargoes`)
+            },
+            cargoes: {
+                list: () => makeRequest('/api/v1/cargoes'),
+                get: (id) => makeRequest(`/api/v1/cargoes/${id}`),
+                matchVessels: (id) => makeRequest(`/api/v1/cargoes/match/${id}/vessels`)
+            },
+            auctions: {
+                active: () => makeRequest('/api/v1/auctions/active'),
+                past: () => makeRequest('/api/v1/auctions/past')
+            },
+            email: {
+                process: () => makeRequest('/api/v1/process-emails', 'POST')
+            }
+        };
+
+        // Utility functions
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+
+        function formatQuantity(quantity) {
+            if (!quantity) return '-';
+            return quantity.toLocaleString() + ' MT';
+        }
+
+        // UI functions
         function toggleDropdown() {
             const dropdown = document.getElementById('userDropdown');
             dropdown.classList.toggle('hidden');
@@ -80,6 +142,20 @@
                 }
             }
         }
+
+        // Error handling
+        function showError(message) {
+            // You can implement your own error display logic here
+            console.error(message);
+        }
+
+        // Initialize tooltips, modals, or other UI components
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add any initialization code here
+        });
     </script>
+
+    <!-- Page-specific scripts -->
+    {% block scripts %}{% endblock %}
 </body>
 </html>
